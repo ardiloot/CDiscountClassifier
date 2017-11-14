@@ -1,89 +1,150 @@
 import os
-import bson
-import math
 import numpy as np
 import pandas as pd
-import cProfile, pstats
 import keras
+import yaml
 
 from os import path
+from datetime import datetime
 from keras.preprocessing.image import ImageDataGenerator
-from keras import backend as K
 
-from keras.models import Sequential
-from keras.layers import Dropout, Flatten, Dense
-from keras.layers.convolutional import Conv2D
-from keras.layers.pooling import MaxPooling2D, GlobalAveragePooling2D
-from keras.applications import resnet50
-from keras.applications import xception
-
-from CDiscountClassifier._Utils import PrecalcDatasetMetadata, ExtractAndPreprocessImg, BSONIterator
+from CDiscountClassifier import _Models
+from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel
 
 class CDiscountClassfier:
     
-    def __init__(self, datasetDir, seed = None):
-        self.datasetDir = datasetDir
-        self._targetSize = (180, 180)
-        self._batchSize = 32
-        self._seed = seed
-         
-        self._trainImageDataGenerator = ImageDataGenerator(preprocessing_function = xception.preprocess_input)
-        self._valImageDataGenerator = ImageDataGenerator(preprocessing_function = xception.preprocess_input)
-         
+    def __init__(self, **kwargs):
+        # Default params
+        
+        self.params = {
+            "friendlyName": None,
+            "datasetDir": None,
+            "trainDatasetName": None,
+            "targetSize": (180, 180),
+            "batchSize": 64
+            }
+        
+        self.params["valTrainSplit"] = {
+            "splitPercentage": 0.2,
+            "dropoutPercentage": 0.0,
+            "seed": 0
+            }
+        
+        self.params["model"] = {
+            "name": "Xception",
+            "kwargs": {}
+            }
+        
+        self.params["fitGenerator"] = {
+            "epochs": 5,
+            "workers": 5
+            }
+        
+        self.params["optimizer"] = {
+            "name": "Adam",
+            "kwargs": {
+                "lr": 1e-3,
+                "beta_1": 0.9,
+                "beta_2": 0.999,
+                "epsilon": 1e-8,
+                "decay": 0.0
+                }
+            }
+                  
+        # Update params
+        self.params.update(**kwargs)
+        
+        # Check dataset dir
+        if self.datasetDir is None and "CDISCOUNT_DATASET" in os.environ:
+            self.datasetDir = os.environ["CDISCOUNT_DATASET"]
+            
+        # Precalc
         self._ReadCategoryTree()
                 
-    def TrainModel(self, datasetName):
-        # Filenames
-        bsonFile = path.join(self.datasetDir, "%s.bson" % (datasetName))
-        productsMetaFile = path.join(self.datasetDir, "%s_metadata.csv" % (datasetName))
-        
-        # Read metadata
-        print("Loading metadata...")
-        if not path.isfile(productsMetaFile):
-            PrecalcDatasetMetadata(datasetName, self.datasetDir)
-        productsMetaDf = pd.read_csv(productsMetaFile, index_col = "productId")
-        productsMetaDf["classId"] = productsMetaDf.categoryId.map(self._mapCategoryToClass)
-        print("Metadata loaded.")
-        
-        print(productsMetaDf.head())
+    def InitTrainingData(self):
+        # Products metadata
+        self.productsMetaDf = self._ReadProductsMetadata(self.trainDatasetName)
         
         # Split to train and val
         print("Making train/val splits...")
-        trainMetaDf, valMetaDf = self._MakeTrainValSets(productsMetaDf, \
-            splitPercentage = 0.2, dropoutPercentage = 0.99, seed = self._seed)
-        print("Train", trainMetaDf.shape)
-        print("Val", valMetaDf.shape)
+        self.trainMetaDf, self.valMetaDf = self._MakeTrainValSets(self.productsMetaDf, \
+                                            **self.params["valTrainSplit"])
+        print("Train", self.trainMetaDf.shape)
+        print("Val", self.valMetaDf.shape)
+        print("Making train/val splits done.")
+                
+    def TrainModel(self):
+        # Init
+        params = self.params
+        trainingName = self.trainingName
+        resultsDir = r"../../results"
+        trainingDir = path.join(resultsDir, trainingName)
+        tensorboardBaseDir = r"../../tensorboard"
+        tensorboardDir = path.join(tensorboardBaseDir, trainingName)
         
-        # Iterators
-        trainGenerator = BSONIterator(bsonFile, productsMetaDf, trainMetaDf, self.nClasses, self._trainImageDataGenerator,
-                 self._targetSize, withLabels = True, batchSize = self._batchSize)
+        # Make dirs
+        for folder in [resultsDir, trainingDir, tensorboardBaseDir, tensorboardDir]:
+            if not path.isdir(folder):
+                os.mkdir(folder)
 
-        valGenerator = BSONIterator(bsonFile, productsMetaDf, valMetaDf, self.nClasses, self._trainImageDataGenerator,
-                 self._targetSize, withLabels = True, batchSize = self._batchSize)
+        # Save params
+        with open(path.join(trainingDir, "parameters.yml"), "w") as fout:
+            yaml.safe_dump(self.params, fout)
+
+        # Image data generators 
+        preproccesingFunc = _Models.PREPROCESS_FUNCS[params["model"]["name"]]
+        self._trainImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+        self._valImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+
+        # Iterators
+        print("Prepare iterators...")
+        bsonFile = path.join(self.datasetDir, "%s.bson" % (self.trainDatasetName))
+        
+        trainGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.trainMetaDf, \
+            self.nClasses, self._trainImageDataGenerator, self.targetSize, \
+            withLabels = True, batchSize = self.batchSize)
+
+        valGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.valMetaDf, \
+            self.nClasses, self._trainImageDataGenerator, self.targetSize, \
+            withLabels = True, batchSize = self.batchSize)
+        print("Prepare iterators done.")
 
         # Model
-        modelBase = xception.Xception(include_top = False, input_shape = self.imageShape, weights = "imagenet", pooling = "avg")
-        modelBase.summary()
-        modelBase.trainable = False
+        print("Preparing model...")
+        modelClass = _Models.MODELS[params["model"]["name"]]
+        model = modelClass(self.imageShape, self.nClasses, **params["model"]["kwargs"])
         
-        model = Sequential()
-        model.add(modelBase)
-        model.add(Dense(self.nClasses, activation = "softmax", name = "predictions"))
-        model.summary()
+        # Optimizer
+        if params["optimizer"]["name"] == "Adam":
+            optimizer = keras.optimizers.Adam(**params["optimizer"]["kwargs"])
+        elif params["optimizer"]["name"] == "SGD":
+            optimizer = keras.optimizers.SGD(**params["optimizer"]["kwargs"])
+        elif params["optimizer"]["name"] == "RMSprop":
+            optimizer = keras.optimizers.RMSprop(**params["optimizer"]["kwargs"])
+        else:
+            raise NotImplementedError()
         
-        model.compile(loss = keras.losses.categorical_crossentropy,
-                      optimizer = keras.optimizers.SGD(lr = 0.045, momentum = 0.9, decay = 0.94))
+        # Compile
+        model.compile(metrics = ["accuracy"],
+                      loss = keras.losses.categorical_crossentropy,
+                      optimizer = optimizer)
+        print("Preparing model done.")
         
         # Fit
+        print("Fitting model...")
+        modelFile = path.join(trainingDir, "model.{epoch:02d}-{val_acc:.2f}.hdf5")
+        callbacks = [
+            keras.callbacks.TensorBoard(log_dir = tensorboardDir),
+            keras.callbacks.ModelCheckpoint(modelFile, monitor = "val_acc", verbose = 1, save_best_only = True)
+            ]
+         
         model.fit_generator(trainGenerator,
-                    steps_per_epoch = trainMetaDf.shape[0] // self._batchSize,
-                    epochs = 5,
+                    steps_per_epoch = self.trainMetaDf.shape[0] // self.batchSize,
                     validation_data = valGenerator,
-                    validation_steps = max(1, valMetaDf.shape[0] // self._batchSize),
-                    workers = 5)
-        
-
+                    validation_steps = max(1, self.valMetaDf.shape[0] // self.batchSize),
+                    callbacks = callbacks,
+                    **params["fitGenerator"])
         
         print("Model fit done.")
                 
@@ -104,6 +165,18 @@ class CDiscountClassfier:
         # Add not cat mapping
         self._mapCategoryToClass[-1] = -1
         self._mapClassToCategory[-1] = -1
+        
+    def _ReadProductsMetadata(self, datasetName):
+        print("Loading metadata...")
+        productsMetaFile = path.join(self.datasetDir, "%s_metadata.csv" % (datasetName))
+        
+        if not path.isfile(productsMetaFile):
+            PrecalcDatasetMetadata(datasetName, self.datasetDir)
+        productsMetaDf = pd.read_csv(productsMetaFile, index_col = "productId")
+        productsMetaDf["classId"] = productsMetaDf.categoryId.map(self._mapCategoryToClass)
+        print("Metadata loaded.")
+        
+        return productsMetaDf
         
     def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0, seed = None):
         np.random.seed(seed)
@@ -136,53 +209,40 @@ class CDiscountClassfier:
         resTrainDf = pd.DataFrame(np.concatenate(resTrain, axis = 0), columns = ["productId", "imgNr"])
         resValDf = pd.DataFrame(np.concatenate(resVal, axis = 0), columns = ["productId", "imgNr"])
         return resTrainDf, resValDf    
-        
-        
-    def _LoadImages(self, bsonFile, metadataDf, imageDataGenerator, numClasses, withLabels = True):
-        imageShape = self._targetSize + (3,)
-        XData = np.zeros((metadataDf.shape[0],) + imageShape, dtype = K.floatx())
-        if withLabels:
-            yData = np.zeros((metadataDf.shape[0], numClasses), dtype = K.floatx())
-        
-        with open(bsonFile, "rb") as file:
-            for i in range(metadataDf.shape[0]):
-                offset = metadataDf.offset[i]
-                length = metadataDf.length[i]
-                imgNr = metadataDf.imgNr[i]
-                
-                # Seek and read  
-                file.seek(offset)
-                imgBytes = file.read(length)
-                productDict = bson.BSON.decode(imgBytes)
-            
-                x = ExtractAndPreprocessImg(productDict, imgNr, self._targetSize, imageDataGenerator)
-            
-                # Save
-                XData[i] = x
-                if withLabels:
-                    classId = metadataDf.classId[i]
-                    yData[i, classId] = 1.0
-        return XData, yData
 
+    @property
+    def datasetDir(self):  # @DuplicatedSignature
+        return self.params["datasetDir"]
+
+    @datasetDir.setter
+    def datasetDir(self, value):
+        self.params["datasetDir"] = value
+
+    @property
+    def trainDatasetName(self):
+        return self.params["trainDatasetName"]
+
+    @property
+    def targetSize(self):
+        return self.params["targetSize"]
+
+    @property
+    def batchSize(self):
+        return self.params["batchSize"]
+    
     @property
     def nClasses(self):
         return self._dfCategories.shape[0]
 
     @property
     def imageShape(self):
-        return tuple(self._targetSize + (3,))
+        return tuple(self.targetSize + (3,))
+
+    @property
+    def trainingName(self):
+        dateStr = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        friendlyName = self.params["model"]["name"] if self.params["friendlyName"] is None else self.params["friendlyName"] 
+        return "%s, %s" % (dateStr, friendlyName) 
 
 if __name__ == "__main__":
-    datasetDir = os.environ["CDISCOUNT_DATASET"]
-    print("datasetDir", datasetDir)
-    
-    profile = cProfile.Profile()
-    profile.enable()
-    
-    m = CDiscountClassfier(datasetDir, seed = 0)
-    m.TrainModel("train")
-        
-        
-    profile.disable()
-    pstats.Stats(profile).sort_stats("cumtime").print_stats(50) 
-    
+    pass
