@@ -1,78 +1,35 @@
-import io
+import os
 import bson
 import math
-import pylab as plt
 import numpy as np
 import pandas as pd
-from os import path
-from keras.preprocessing.image import ImageDataGenerator, Iterator
-from keras import backend as K
 import cProfile, pstats
-import threading
-from CDiscountClassifier._Utils import PrecalcDatasetMetadata, ExtractAndPreprocessImg
+import keras
+
+from os import path
+from keras.preprocessing.image import ImageDataGenerator
+from keras import backend as K
+
+from keras.models import Sequential
+from keras.layers import Dropout, Flatten, Dense
+from keras.layers.convolutional import Conv2D
+from keras.layers.pooling import MaxPooling2D, GlobalAveragePooling2D
+from keras.applications import resnet50
+from keras.applications import xception
+
+from CDiscountClassifier._Utils import PrecalcDatasetMetadata, ExtractAndPreprocessImg, BSONIterator
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel
-
-class BSONIterator(Iterator):
-    def __init__(self, bsonFile, metadataDf, numClasses, imageDataGenerator,
-                 targetSize, withLabels = True, batchSize = 32, 
-                 shuffle = False, seed = None):
-
-        self.file = open(bsonFile, "rb")
-        self.metadataDf = metadataDf
-        self.withLabels = withLabels
-        self.samples = metadataDf.shape[0]
-        self.numClasses = numClasses
-        self.imageDataGenerator = imageDataGenerator
-        self.targetSize = tuple(targetSize)
-        self.imageShape = self.targetSize + (3,)
-
-        super().__init__(self.samples, batchSize, shuffle, seed)
-        self.lock = threading.Lock()
-
-    def _get_batches_of_transformed_samples(self, indexArray):
-        XBatch = np.zeros((len(indexArray),) + self.imageShape, dtype = K.floatx())
-        if self.withLabels:
-            yBatch = np.zeros((len(indexArray), self.numClasses), dtype = K.floatx())
-
-        for batchId, sampleId in enumerate(indexArray):
-            # Lock and read sample
-            with self.lock:
-                offset = self.metadataDf.offset[sampleId]
-                length = self.metadataDf.length[sampleId]
-                self.file.seek(offset)
-                productDictBytes = self.file.read(length)
-
-            # Extract and preprocess image
-            productDict = bson.BSON.decode(productDictBytes)
-            imgNr = self.metadataDf.imgNr[sampleId]
-            x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, self.imageDataGenerator)
-
-            # Save
-            XBatch[batchId] = x
-            if self.withLabels:
-                classId = self.metadataDf.classId[sampleId]
-                yBatch[batchId, classId] = 1
-
-        if self.withLabels:
-            return XBatch, yBatch
-        else:
-            return XBatch
-
-    def next(self):
-        with self.lock:
-            index_array = next(self.index_generator)
-        return self._get_batches_of_transformed_samples(index_array)
-
 
 class CDiscountClassfier:
     
-    def __init__(self, datasetDir):
+    def __init__(self, datasetDir, seed = None):
         self.datasetDir = datasetDir
         self._targetSize = (180, 180)
         self._batchSize = 32
+        self._seed = seed
          
-        self._trainImageDataGenerator = ImageDataGenerator()
-        self._valImageDataGenerator = ImageDataGenerator()
+        self._trainImageDataGenerator = ImageDataGenerator(preprocessing_function = xception.preprocess_input)
+        self._valImageDataGenerator = ImageDataGenerator(preprocessing_function = xception.preprocess_input)
          
         self._ReadCategoryTree()
                 
@@ -86,36 +43,50 @@ class CDiscountClassfier:
         if not path.isfile(productsMetaFile):
             PrecalcDatasetMetadata(datasetName, self.datasetDir)
         productsMetaDf = pd.read_csv(productsMetaFile, index_col = "productId")
+        productsMetaDf["classId"] = productsMetaDf.categoryId.map(self._mapCategoryToClass)
         print("Metadata loaded.")
+        
+        print(productsMetaDf.head())
         
         # Split to train and val
         print("Making train/val splits...")
-        profile = cProfile.Profile()
-        profile.enable()
+        trainMetaDf, valMetaDf = self._MakeTrainValSets(productsMetaDf, \
+            splitPercentage = 0.2, dropoutPercentage = 0.99, seed = self._seed)
+        print("Train", trainMetaDf.shape)
+        print("Val", valMetaDf.shape)
         
-        trainDf, valDf = self._MakeTrainValSets(productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0)
-        
-        profile.disable()
-        pstats.Stats(profile).sort_stats("cumtime").print_stats(30)   
-        print("Train", trainDf.shape)
-        print("Val", valDf.shape)
-        
-        # Iterator
-        trainGenerator = BSONIterator(bsonFile, productsMetaDf, dd, self.nClasses, self._trainImageDataGenerator,
+        # Iterators
+        trainGenerator = BSONIterator(bsonFile, productsMetaDf, trainMetaDf, self.nClasses, self._trainImageDataGenerator,
                  self._targetSize, withLabels = True, batchSize = self._batchSize)
 
-        profile = cProfile.Profile()
-        profile.enable()
+        valGenerator = BSONIterator(bsonFile, productsMetaDf, valMetaDf, self.nClasses, self._trainImageDataGenerator,
+                 self._targetSize, withLabels = True, batchSize = self._batchSize)
+
+        # Model
+        modelBase = xception.Xception(include_top = False, input_shape = self.imageShape, weights = "imagenet", pooling = "avg")
+        modelBase.summary()
+        modelBase.trainable = False
         
-        count = 0
-        for i, (x, y) in enumerate(trainGenerator):
-            if i >= 1000:
-                break
-            count += x.shape[0]
-                #print(x.shape, y.shape)
-        profile.disable()
-        pstats.Stats(profile).sort_stats("cumtime").print_stats(30)             
-        print(count)
+        model = Sequential()
+        model.add(modelBase)
+        model.add(Dense(self.nClasses, activation = "softmax", name = "predictions"))
+        model.summary()
+        
+        model.compile(loss = keras.losses.categorical_crossentropy,
+                      optimizer = keras.optimizers.SGD(lr = 0.045, momentum = 0.9, decay = 0.94))
+        
+        # Fit
+        model.fit_generator(trainGenerator,
+                    steps_per_epoch = trainMetaDf.shape[0] // self._batchSize,
+                    epochs = 5,
+                    validation_data = valGenerator,
+                    validation_steps = max(1, valMetaDf.shape[0] // self._batchSize),
+                    workers = 5)
+        
+
+        
+        print("Model fit done.")
+                
 
     def _ReadCategoryTree(self):
         # Read
@@ -130,7 +101,12 @@ class CDiscountClassfier:
         self._mapCategoryToClass = dict(zip(df.categoryId, df.classId))
         self._mapClassToCategory = dict(zip(df.categoryId, df.classId))
         
-    def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0):
+        # Add not cat mapping
+        self._mapCategoryToClass[-1] = -1
+        self._mapClassToCategory[-1] = -1
+        
+    def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0, seed = None):
+        np.random.seed(seed)
         indicesByGroups = productsMetaDf.groupby("categoryId", sort = False).indices
         numImgsColumnNr = productsMetaDf.columns.get_loc("numImgs")
         
@@ -176,7 +152,8 @@ class CDiscountClassfier:
                 
                 # Seek and read  
                 file.seek(offset)
-                productDict = bson.BSON.decode(file.read(length))
+                imgBytes = file.read(length)
+                productDict = bson.BSON.decode(imgBytes)
             
                 x = ExtractAndPreprocessImg(productDict, imgNr, self._targetSize, imageDataGenerator)
             
@@ -191,11 +168,21 @@ class CDiscountClassfier:
     def nClasses(self):
         return self._dfCategories.shape[0]
 
+    @property
+    def imageShape(self):
+        return tuple(self._targetSize + (3,))
+
 if __name__ == "__main__":
-
+    datasetDir = os.environ["CDISCOUNT_DATASET"]
+    print("datasetDir", datasetDir)
     
-    m = CDiscountClassfier(r"D:\Kaggle")
-    m.TrainModel("train_example")
+    profile = cProfile.Profile()
+    profile.enable()
     
-    plt.show()
-
+    m = CDiscountClassfier(datasetDir, seed = 0)
+    m.TrainModel("train")
+        
+        
+    profile.disable()
+    pstats.Stats(profile).sort_stats("cumtime").print_stats(50) 
+    

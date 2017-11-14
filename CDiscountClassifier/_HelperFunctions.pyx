@@ -9,9 +9,9 @@ def RepeatAndLabel(np.ndarray[long long, ndim = 1] arr, np.ndarray[long long, nd
     
     res = np.zeros((newRows, 2), dtype = arr.dtype)
     
-    cdef int i, j, count = 0
+    cdef int i, j, n, count = 0
     for i in range(arr.shape[0]):
-        cdef int n = ns[i]
+        n = ns[i]
         for j in range(n):
             res[count, 0] = arr[i]
             res[count, 1] = j
