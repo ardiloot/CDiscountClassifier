@@ -103,11 +103,11 @@ class CDiscountClassfier:
         
         trainGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.trainMetaDf, \
             self.nClasses, self._trainImageDataGenerator, self.targetSize, \
-            withLabels = True, batchSize = self.batchSize)
+            withLabels = True, batchSize = self.batchSize, shuffle = True)
 
         valGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.valMetaDf, \
             self.nClasses, self._trainImageDataGenerator, self.targetSize, \
-            withLabels = True, batchSize = self.batchSize)
+            withLabels = True, batchSize = self.batchSize, shuffle = True)
         print("Prepare iterators done.")
 
         # Model
@@ -127,7 +127,7 @@ class CDiscountClassfier:
         
         # Compile
         model.compile(metrics = ["accuracy"],
-                      loss = keras.losses.categorical_crossentropy,
+                      loss = "categorical_crossentropy",
                       optimizer = optimizer)
         print("Preparing model done.")
         
