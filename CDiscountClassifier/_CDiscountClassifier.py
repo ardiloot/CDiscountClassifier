@@ -236,13 +236,13 @@ class CDiscountClassfier:
 
     @property
     def imageShape(self):
-        return tuple(self.targetSize + (3,))
+        return tuple(tuple(self.targetSize) + (3,))
 
     @property
     def trainingName(self):
-        dateStr = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        dateStr = datetime.now().strftime("%Y%m%d-%H%M%S")
         friendlyName = self.params["model"]["name"] if self.params["friendlyName"] is None else self.params["friendlyName"] 
-        return "%s, %s" % (dateStr, friendlyName) 
+        return "%s_%s" % (dateStr, friendlyName) 
 
 if __name__ == "__main__":
     pass
