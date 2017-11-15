@@ -1,48 +1,46 @@
+import sys
+import yaml
 import cProfile, pstats
 from CDiscountClassifier import CDiscountClassfier
 
 if __name__ == "__main__":
     params = {
         "datasetDir": None,
-        "trainDatasetName": "train_example",
+        "trainDatasetName": "train",
         "targetSize": (180, 180),
-        "batchSize": 10 #64
-        }
-    
-    params["valTrainSplit"] = {
-        "splitPercentage": 0.2,
-        "dropoutPercentage": 0.0,
-        "seed": 0
-        }
-    
-    params["model"] = {
-        "name": "Xception",
-        "kwargs": {}
-        }
-    
-    params["fitGenerator"] = {
-        "epochs": 5,
-        "workers": 5
-        }
-    
-    params["optimizer"] = {
-        "name": "Adam",
-        "kwargs": {
-            "lr": 1e-3, 
-            "beta_1": 0.9, 
-            "beta_2": 0.999, 
-            "epsilon": 1e-8, 
-            "decay": 0.0
+        "batchSize": 32,
+        "valTrainSplit": {
+            "splitPercentage": 0.2,
+            "dropoutPercentage": 0.995,
+            "seed": 0
+            },
+        "model": {
+            "name": "Xception",
+            "kwargs": {}
+            },
+        "fitGenerator": {
+            "epochs": 3,
+            "workers": 5
+            },
+        "optimizer": {
+            "name": "SGD",
+            "kwargs": {
+                "lr": 1e-3,
+                "momentum": 0.9, 
+                "decay": 0.0,
+                "nesterov": False
+                }
             }
         }
-
+      
     #params["optimizer"] = {
-    #    "name": "SGD",
+    #    "name": "Adam",
     #    "kwargs": {
-    #        "lr": 1e-2,
-    #        "momentum": 0.0, 
-    #        "decay": 0.0,
-    #        "nesterov": False
+    #        "lr": 1e-3, 
+    #        "beta_1": 0.9, 
+    #        "beta_2": 0.999, 
+    #        "epsilon": 1e-8, 
+    #        "decay": 0.0
     #        }
     #    }
           
@@ -55,6 +53,15 @@ if __name__ == "__main__":
     #        "decay": 0.0
     #        }
     #    }
+
+    if len(sys.argv) > 1:
+        ymlParamsFile = sys.argv[1]
+        print("ymlParamsFile", ymlParamsFile)
+        with open(ymlParamsFile, "r") as fin:
+            newParams = yaml.safe_load(fin)
+        params.update(newParams)
+
+    print("Params", params)
 
     profile = cProfile.Profile()
     profile.enable()
