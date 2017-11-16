@@ -41,7 +41,11 @@ def ReplaceValue(params, param, value, copy = False):
     d = res
     for key in list(param)[:-1]:
         d = d[key]
-    d[param[-1]] = value
+    
+    name = param[-1]  
+    if not name in d:
+        raise ValueError("Key does not exist: %s" % (param)) 
+    d[name] = value
 
     return res
 
@@ -56,11 +60,11 @@ if __name__ == "__main__":
     params = {
         "datasetDir": None,
         "trainDatasetName": "train",
-        "targetSize": (180, 180),
-        "batchSize": 256,
+        "targetSize": (90, 90),
+        "batchSize": 64,
         "valTrainSplit": {
             "splitPercentage": 0.2,
-            "dropoutPercentage": 0.995,
+            "dropoutPercentage": 0.0,
             "seed": 0
             },
         "model": {
@@ -68,17 +72,12 @@ if __name__ == "__main__":
             "kwargs": {}
             },
         "fitGenerator": {
-            "epochs": 3,
+            "epochs": 200,
             "workers": 5
             },
         "optimizer": {
-            "name": "SGD",
-            "kwargs": {
-                "lr": 1e-3,
-                "momentum": 0.9, 
-                "decay": 0.0,
-                "nesterov": False
-                }
+            "name": "Adam",
+            "kwargs": {}
             }
         }
     
@@ -87,13 +86,13 @@ if __name__ == "__main__":
        "nodes": 1,
        "cpusPerTask": 5,
        "memMB": 16000,
-       "walltime": "08:00:00",
+       "walltime": "11:00:00",
        "gpus": "gpu:tesla:1"
     }
     
     # Sweep params
-    sweepParam = ("batchSize", )
-    sweepValues = [32, 64]
+    sweepParam = ("batchSize",)
+    sweepValues = [64, 128, 256, 512]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)
