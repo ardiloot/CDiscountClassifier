@@ -12,20 +12,22 @@ from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, TrainTimeStatsCallback
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel
 
+#===============================================================================
+# CDiscountClassfier
+#===============================================================================
+
 class CDiscountClassfier:
     
-    def __init__(self, resultsDir = r"../../results", **kwargs):
-        self.resultsDir = resultsDir
-        if not path.isdir(resultsDir):
-            os.mkdir(resultsDir)
-        
+    def __init__(self, **kwargs):
         # Default params
         self.params = {
             "friendlyName": None,
             "datasetDir": None,
+            "resultsDir": "../../results",
             "trainDatasetName": None,
             "targetSize": (180, 180),
             "batchSize": 64,
+            "epochs": 5,
             "trainSeed": 1000003
             }
         
@@ -41,7 +43,6 @@ class CDiscountClassfier:
             }
         
         self.params["fitGenerator"] = {
-            "epochs": 5,
             "workers": 5
             }
         
@@ -55,6 +56,7 @@ class CDiscountClassfier:
                 "decay": 0.0
                 }
             }
+        self.params["epochSpecificParams"] = {}
                   
         # Update params
         self.params.update(**kwargs)
@@ -62,6 +64,10 @@ class CDiscountClassfier:
         # Check dataset dir
         if self.datasetDir is None and "CDISCOUNT_DATASET" in os.environ:
             self.datasetDir = os.environ["CDISCOUNT_DATASET"]
+        
+        # Resultsdir
+        if not path.isdir(self.resultsDir):
+            os.mkdir(self.resultsDir)
             
         # Precalc
         self._ReadCategoryTree()
@@ -153,13 +159,29 @@ class CDiscountClassfier:
             TrainTimeStatsCallback(self.statsFilename)
             ]
          
-        model.fit_generator(trainGenerator,
-                    steps_per_epoch = self.trainMetaDf.shape[0] // self.batchSize,
-                    validation_data = valGenerator,
-                    validation_steps = max(1, self.valMetaDf.shape[0] // self.batchSize),
-                    callbacks = callbacks,
-                    **params["fitGenerator"])
-        
+        stepsPerEpoch = self.trainMetaDf.shape[0] // self.batchSize
+        stepsPerValidation = max(1, self.valMetaDf.shape[0] // self.batchSize)
+         
+        totalEpocs = params["epochs"]
+        epochSpecificParams = params["epochSpecificParams"]
+        for curEpoch in range(totalEpocs):
+            # Set learning rate
+            if curEpoch in epochSpecificParams:
+                print("Update optimizer params:", epochSpecificParams[curEpoch])
+                for k, v in epochSpecificParams[curEpoch].items():
+                    if k == "lr":
+                        keras.backend.set_value(model.optimizer.lr, v)
+            
+            print ("Start training for epoch %d/%d" % (curEpoch, totalEpocs))
+            model.fit_generator(trainGenerator,
+                steps_per_epoch = stepsPerEpoch,
+                validation_data = valGenerator,
+                validation_steps = stepsPerValidation,
+                callbacks = callbacks,
+                epochs = curEpoch + 1,
+                workers = 5,
+                initial_epoch = curEpoch)
+            
         print("Model fit done.")
                 
 
@@ -251,6 +273,10 @@ class CDiscountClassfier:
     @property
     def imageShape(self):
         return tuple(tuple(self.targetSize) + (3,))
+
+    @property
+    def resultsDir(self):
+        return self.params["resultsDir"]
 
     @property
     def trainingDir(self):

@@ -26,8 +26,10 @@ if __name__ == "__main__":
     params = {
         "datasetDir": None,
         "trainDatasetName": "train",
+        "resultsDir": r"C:\Users\Ardi\Downloads\results",
         "targetSize": (90, 90),
         "batchSize": 64,
+        "epochs": 3,
         "valTrainSplit": {
             "splitPercentage": 0.2,
             "dropoutPercentage": 0.9999,
@@ -37,13 +39,13 @@ if __name__ == "__main__":
             "name": "Xception",
             "kwargs": {}
             },
-        "fitGenerator": {
-            "epochs": 3,
-            "workers": 5
-            },
         "optimizer": {
             "name": "Adam",
             "kwargs": {}
+            },
+        "epochSpecificParams":{
+            1: {"lr": 1e-3},
+            2: {"lr": 1e-4}
             }
         }
 

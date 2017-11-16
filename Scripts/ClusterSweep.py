@@ -62,6 +62,7 @@ if __name__ == "__main__":
         "trainDatasetName": "train",
         "targetSize": (90, 90),
         "batchSize": 64,
+        "epochs": 5,
         "valTrainSplit": {
             "splitPercentage": 0.2,
             "dropoutPercentage": 0.0,
@@ -71,14 +72,11 @@ if __name__ == "__main__":
             "name": "Xception",
             "kwargs": {}
             },
-        "fitGenerator": {
-            "epochs": 200,
-            "workers": 5
-            },
         "optimizer": {
             "name": "Adam",
             "kwargs": {}
-            }
+            },
+        "epochSpecificParams":{}
         }
     
     # Resources
