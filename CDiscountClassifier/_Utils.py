@@ -2,12 +2,18 @@ import io
 import bson
 import struct
 import threading
+import keras
+
 import numpy as np
 import pandas as pd
+
 from os import path
 from keras import backend as K
 from keras.preprocessing.image import load_img, img_to_array, Iterator
 
+#===============================================================================
+# Functions
+#===============================================================================
 
 def BuildDatasetMetadata(datasetName, datasetDir):
     # https://www.kaggle.com/humananalog/keras-generator-for-reading-directly-from-bson
@@ -64,6 +70,10 @@ def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator):
     
     return x
     
+#===============================================================================
+# BSONIterator
+#===============================================================================
+
 class BSONIterator(Iterator):
     def __init__(self, bsonFile, productsMetaDf, imagesMetaDf, numClasses, imageDataGenerator,
                  targetSize, withLabels = True, batchSize = 32, 
@@ -123,7 +133,65 @@ class BSONIterator(Iterator):
         with self.lock:
             index_array = next(self.index_generator)
         return self._get_batches_of_transformed_samples(index_array)
-    
+ 
+ #==============================================================================
+ # TrainTimeStatsCallback
+ #==============================================================================
+ 
+class TrainTimeStatsCallback(keras.callbacks.Callback):
+
+    def __init__(self, filename, statsPerEpoch = 100, \
+                 toSave = ["loss", "acc", "val_loss", "val_acc"]):
+        self.filename = filename
+        self.statsPerEpoch = statsPerEpoch
+        self.toSave = toSave
+        self.curEpoch = None
+        self.curBatch = None
+        self.file = None
+        super().__init__()
+
+    def on_train_begin(self, logs = None):
+        self.verbose = self.params["verbose"]
+        self.epochs = self.params["epochs"]
+        self.statsBatchNrDelta = max(1, self.params["steps"] // self.statsPerEpoch)
+
+        # Open file
+        printHeader = not path.isfile(self.filename)
+        self.file = open(self.filename, "a")
+        if printHeader:
+            self.file.write("%s\n" % ("\t".join(["Epoch"] + self.toSave)))
+
+    def on_train_end(self, logs = None):
+        if self.file is not None:
+            self.file.close()
+
+    def on_epoch_begin(self, epoch, logs = None):
+        self.curEpoch = epoch
+
+    def on_epoch_end(self, epoch, logs = None):
+        self.SaveStats(logs)
+
+    def on_batch_begin(self, batch, logs = None):
+        self.curBatch = batch
+
+    def on_batch_end(self, batch, logs = None):
+        if batch % self.statsBatchNrDelta != 0 or batch + 1 == self.params["steps"]:
+            return
+        self.SaveStats(logs)
+        
+    def SaveStats(self, logs):
+        epochFloat = self.curEpoch + (self.curBatch + 1) / self.params["steps"]
+        logs = logs or {}
+        
+        row = [epochFloat]
+        for metricName in self.toSave:
+            if metricName in logs:
+                row.append(logs[metricName])
+            else:
+                row.append("")
+        self.file.write("%s\n" % ("\t".join(map(str, row))))
+        self.file.flush()
+        
 if __name__ == "__main__":
     pass
         

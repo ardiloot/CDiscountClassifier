@@ -9,7 +9,7 @@ from datetime import datetime
 from keras.preprocessing.image import ImageDataGenerator
 
 from CDiscountClassifier import _Models
-from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator
+from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, TrainTimeStatsCallback
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel
 
 class CDiscountClassfier:
@@ -76,6 +76,9 @@ class CDiscountClassfier:
         print("Making train/val splits done.")
                 
     def TrainModel(self):
+        print("Training with params:")
+        print(self.params)
+        
         # Init
         params = self.params
         np.random.seed(params["trainSeed"])
@@ -137,7 +140,8 @@ class CDiscountClassfier:
         modelFile = path.join(trainingDir, "model.{epoch:02d}-{val_acc:.2f}.hdf5")
         callbacks = [
             keras.callbacks.TensorBoard(log_dir = trainingDir, write_graph = False),
-            keras.callbacks.ModelCheckpoint(modelFile, monitor = "val_acc", verbose = 1, save_best_only = True)
+            keras.callbacks.ModelCheckpoint(modelFile, monitor = "val_acc", verbose = 1, save_best_only = True),
+            TrainTimeStatsCallback(path.join(trainingDir, "accuracy.csv"))
             ]
          
         model.fit_generator(trainGenerator,
