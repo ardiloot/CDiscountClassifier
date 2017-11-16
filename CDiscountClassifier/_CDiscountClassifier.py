@@ -14,9 +14,12 @@ from CDiscountClassifier._HelperFunctions import RepeatAndLabel
 
 class CDiscountClassfier:
     
-    def __init__(self, **kwargs):
-        # Default params
+    def __init__(self, resultsDir = r"../../results", **kwargs):
+        self.resultsDir = resultsDir
+        if not path.isdir(resultsDir):
+            os.mkdir(resultsDir)
         
+        # Default params
         self.params = {
             "friendlyName": None,
             "datasetDir": None,
@@ -62,6 +65,12 @@ class CDiscountClassfier:
             
         # Precalc
         self._ReadCategoryTree()
+        
+    def GenerateTrainingName(self):  
+        dateStr = datetime.now().strftime("%Y%m%d-%H%M%S")
+        friendlyName = self.params["model"]["name"] if self.params["friendlyName"] is None else self.params["friendlyName"] 
+        self.trainingName = "%s_%s" % (dateStr, friendlyName)
+        return self.trainingName 
                 
     def InitTrainingData(self):
         # Products metadata
@@ -75,7 +84,12 @@ class CDiscountClassfier:
         print("Val", self.valMetaDf.shape)
         print("Making train/val splits done.")
                 
-    def TrainModel(self):
+    def TrainModel(self, updateTrainingName = True, newTrainingName = None):
+        # Training name
+        if updateTrainingName:
+            self.trainingName = self.GenerateTrainingName() if newTrainingName is None else newTrainingName 
+        
+        print(self.trainingName)
         print("Training with params:")
         print(self.params)
         
@@ -83,17 +97,13 @@ class CDiscountClassfier:
         params = self.params
         np.random.seed(params["trainSeed"])
         
-        trainingName = self.trainingName
-        resultsDir = r"../../results"
-        trainingDir = path.join(resultsDir, trainingName)
-        
         # Make dirs
-        for folder in [resultsDir, trainingDir]:
+        for folder in [self.resultsDir, self.trainingDir]:
             if not path.isdir(folder):
                 os.mkdir(folder)
 
         # Save params
-        with open(path.join(trainingDir, "parameters.yml"), "w") as fout:
+        with open(path.join(self.trainingDir, "parameters.yml"), "w") as fout:
             yaml.safe_dump(self.params, fout)
 
         # Image data generators 
@@ -137,11 +147,10 @@ class CDiscountClassfier:
         
         # Fit
         print("Fitting model...")
-        modelFile = path.join(trainingDir, "model.{epoch:02d}-{val_acc:.2f}.hdf5")
         callbacks = [
-            keras.callbacks.TensorBoard(log_dir = trainingDir, write_graph = False),
-            keras.callbacks.ModelCheckpoint(modelFile, monitor = "val_acc", verbose = 1, save_best_only = True),
-            TrainTimeStatsCallback(path.join(trainingDir, "accuracy.csv"))
+            keras.callbacks.TensorBoard(log_dir = self.trainingDir, write_graph = False),
+            keras.callbacks.ModelCheckpoint(self.modelFilename, monitor = "val_acc", verbose = 1, save_best_only = True),
+            TrainTimeStatsCallback(self.statsFilename)
             ]
          
         model.fit_generator(trainGenerator,
@@ -244,10 +253,20 @@ class CDiscountClassfier:
         return tuple(tuple(self.targetSize) + (3,))
 
     @property
-    def trainingName(self):
-        dateStr = datetime.now().strftime("%Y%m%d-%H%M%S")
-        friendlyName = self.params["model"]["name"] if self.params["friendlyName"] is None else self.params["friendlyName"] 
-        return "%s_%s" % (dateStr, friendlyName) 
+    def trainingDir(self):
+        return path.join(self.resultsDir, self.trainingName)
+
+    @property
+    def modelFilename(self):
+        return path.join(self.trainingDir, "model.{epoch:02d}-{val_acc:.2f}.hdf5")
+    
+    @property
+    def statsFilename(self):
+        return path.join(self.trainingDir, "accuracy.csv")
+    
+    @property
+    def logFilename(self):
+        return path.join(self.trainingDir, "log.txt")
 
 if __name__ == "__main__":
     pass
