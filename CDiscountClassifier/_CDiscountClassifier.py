@@ -22,7 +22,8 @@ class CDiscountClassfier:
             "datasetDir": None,
             "trainDatasetName": None,
             "targetSize": (180, 180),
-            "batchSize": 64
+            "batchSize": 64,
+            "trainSeed": 1000003
             }
         
         self.params["valTrainSplit"] = {
@@ -77,14 +78,14 @@ class CDiscountClassfier:
     def TrainModel(self):
         # Init
         params = self.params
+        np.random.seed(params["trainSeed"])
+        
         trainingName = self.trainingName
         resultsDir = r"../../results"
         trainingDir = path.join(resultsDir, trainingName)
-        tensorboardBaseDir = r"../../tensorboard"
-        tensorboardDir = path.join(tensorboardBaseDir, trainingName)
         
         # Make dirs
-        for folder in [resultsDir, trainingDir, tensorboardBaseDir, tensorboardDir]:
+        for folder in [resultsDir, trainingDir]:
             if not path.isdir(folder):
                 os.mkdir(folder)
 
@@ -135,7 +136,7 @@ class CDiscountClassfier:
         print("Fitting model...")
         modelFile = path.join(trainingDir, "model.{epoch:02d}-{val_acc:.2f}.hdf5")
         callbacks = [
-            keras.callbacks.TensorBoard(log_dir = tensorboardDir),
+            keras.callbacks.TensorBoard(log_dir = trainingDir, write_graph = False),
             keras.callbacks.ModelCheckpoint(modelFile, monitor = "val_acc", verbose = 1, save_best_only = True)
             ]
          
@@ -178,7 +179,7 @@ class CDiscountClassfier:
         
         return productsMetaDf
         
-    def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0, seed = None):
+    def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0, seed = 0):
         np.random.seed(seed)
         indicesByGroups = productsMetaDf.groupby("categoryId", sort = False).indices
         numImgsColumnNr = productsMetaDf.columns.get_loc("numImgs")
@@ -193,7 +194,7 @@ class CDiscountClassfier:
                 indices = np.random.choice(indices, toKeep, replace = False)
             
             # Validation set
-            validationSize = round(len(indices) * splitPercentage)
+            validationSize = max(min(1, len(indices) - 1), round(len(indices) * splitPercentage))
             validationIndices = np.random.choice(indices, validationSize, replace = False)
             validationIndicesSet = set(validationIndices)
             validationProductIds = productsMetaDf.index[validationIndices]
