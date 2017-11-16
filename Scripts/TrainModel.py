@@ -53,8 +53,7 @@ if __name__ == "__main__":
         ymlParamsFile = sys.argv[1]
         print("ymlParamsFile", ymlParamsFile)
         with open(ymlParamsFile, "r") as fin:
-            newParams = yaml.safe_load(fin)
-        params.update(newParams)
+            params = yaml.safe_load(fin)
 
     profile = cProfile.Profile()
     profile.enable()

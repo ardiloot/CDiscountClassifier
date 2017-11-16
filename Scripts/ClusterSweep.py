@@ -61,7 +61,7 @@ if __name__ == "__main__":
         "datasetDir": None,
         "trainDatasetName": "train",
         "targetSize": (90, 90),
-        "batchSize": 64,
+        "batchSize": 512,
         "epochs": 5,
         "valTrainSplit": {
             "splitPercentage": 0.2,
@@ -74,7 +74,7 @@ if __name__ == "__main__":
             },
         "optimizer": {
             "name": "Adam",
-            "kwargs": {}
+            "kwargs": {"lr": 0.001}
             },
         "epochSpecificParams":{}
         }
@@ -84,13 +84,13 @@ if __name__ == "__main__":
        "nodes": 1,
        "cpusPerTask": 5,
        "memMB": 16000,
-       "walltime": "11:00:00",
+       "walltime": "8:00:00",
        "gpus": "gpu:tesla:1"
     }
     
     # Sweep params
-    sweepParam = ("batchSize",)
-    sweepValues = [64, 128, 256, 512]
+    sweepParam = ("optimizer", "kwargs", "lr")
+    sweepValues = [1e-2, 5e-3]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)
