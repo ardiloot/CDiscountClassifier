@@ -60,9 +60,10 @@ if __name__ == "__main__":
     params = {
         "datasetDir": None,
         "trainDatasetName": "train",
-        "targetSize": (90, 90),
+        "targetSize": (180, 180),
         "batchSize": 512,
-        "epochs": 5,
+        "epochs": 100,
+        "maxValImages": 100000,
         "valTrainSplit": {
             "splitPercentage": 0.2,
             "dropoutPercentage": 0.0,
@@ -73,10 +74,15 @@ if __name__ == "__main__":
             "kwargs": {}
             },
         "optimizer": {
-            "name": "Adam",
-            "kwargs": {"lr": 0.001}
+            "name": "SGD",
+            "kwargs": {"lr": 1e-2}
             },
-        "epochSpecificParams":{}
+        "epochSpecificParams":{
+            2: {"lrDecayCoef": 0.1},
+            4: {"lrDecayCoef": 0.1},
+            6: {"lrDecayCoef": 0.1},
+            8: {"lrDecayCoef": 0.1},
+            }
         }
     
     # Resources
@@ -84,13 +90,13 @@ if __name__ == "__main__":
        "nodes": 1,
        "cpusPerTask": 5,
        "memMB": 16000,
-       "walltime": "8:00:00",
+       "walltime": "8-00:00:00",
        "gpus": "gpu:tesla:1"
     }
     
     # Sweep params
-    sweepParam = ("optimizer", "kwargs", "lr")
-    sweepValues = [1e-2, 5e-3]
+    sweepParam = ("optimizer", "name")
+    sweepValues = ["SGD"]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)

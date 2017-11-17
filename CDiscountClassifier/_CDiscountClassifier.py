@@ -28,7 +28,8 @@ class CDiscountClassfier:
             "targetSize": (180, 180),
             "batchSize": 64,
             "epochs": 5,
-            "trainSeed": 1000003
+            "trainSeed": 1000003,
+            "maxValImages": None,
             }
         
         self.params["valTrainSplit"] = {
@@ -40,10 +41,6 @@ class CDiscountClassfier:
         self.params["model"] = {
             "name": "Xception",
             "kwargs": {}
-            }
-        
-        self.params["fitGenerator"] = {
-            "workers": 5
             }
         
         self.params["optimizer"] = {
@@ -161,6 +158,9 @@ class CDiscountClassfier:
          
         stepsPerEpoch = self.trainMetaDf.shape[0] // self.batchSize
         stepsPerValidation = max(1, self.valMetaDf.shape[0] // self.batchSize)
+        
+        if params["maxValImages"] is not None:
+            stepsPerValidation = max(stepsPerValidation, self.params["maxValImages"] // self.batchSize)
          
         totalEpocs = params["epochs"]
         epochSpecificParams = params["epochSpecificParams"]
@@ -168,6 +168,7 @@ class CDiscountClassfier:
             # Set learning rate
             if curEpoch in epochSpecificParams:
                 print("Update optimizer params:", epochSpecificParams[curEpoch])
+                oldLr = keras.backend.get_value(model.optimizer.lr)
                 
                 if "lr" in epochSpecificParams[curEpoch] and "lrDecayCoef" in epochSpecificParams[curEpoch]:
                     raise ValueError("Only one (lr or lrDecayCoef) can be specified")
@@ -180,7 +181,7 @@ class CDiscountClassfier:
                         keras.backend.set_value(model.optimizer.lr, v * curLr)
                     else:
                         raise ValueError("Unknown param %s" % (k))
-                print("New lr", keras.backend.get_value(model.optimizer.lr))
+                print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
             
             print ("Start training for epoch %d/%d" % (curEpoch, totalEpocs))
             model.fit_generator(trainGenerator,
