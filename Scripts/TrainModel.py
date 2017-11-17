@@ -35,9 +35,15 @@ if __name__ == "__main__":
             "dropoutPercentage": 0.9999,
             "seed": 0
             },
+        "trainAugmentation": {
+            "zoom_range": 0.1,
+            "width_shift_range": 0.1,
+            "height_shift_range": 0.1,
+            "horizontal_flip": True,
+            },
         "model": {
             "name": "Xception",
-            "kwargs": {"trainable": "blocks", "trainableFromBlock": 10}
+            "kwargs": {"trainable": "onlyTop", "trainableFromBlock": 10}
             },
         "optimizer": {
             "name": "Adam",

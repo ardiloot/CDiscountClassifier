@@ -63,7 +63,8 @@ if __name__ == "__main__":
         "targetSize": (180, 180),
         "batchSize": 512,
         "epochs": 100,
-        "maxValImages": 200000,
+        "valImagesPerEpoch": 10000,
+        "trainImagesPerEpoch": 2000000,
         "valTrainSplit": {
             "splitPercentage": 0.2,
             "dropoutPercentage": 0.0,
@@ -78,10 +79,10 @@ if __name__ == "__main__":
             "kwargs": {"lr": 5e-3}
             },
         "epochSpecificParams":{
-            1: {"lrDecayCoef": 0.1},
             2: {"lrDecayCoef": 0.1},
-            3: {"lrDecayCoef": 0.1},
             4: {"lrDecayCoef": 0.1},
+            6: {"lrDecayCoef": 0.1},
+            8: {"lrDecayCoef": 0.1},
             }
         }
     

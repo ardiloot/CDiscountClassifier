@@ -12,7 +12,7 @@ def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock =
     modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
                                   weights = "imagenet")
     modelBase.trainable = False
-    modelBase.summary()
+    #modelBase.summary()
     
     # Add top
     x = modelBase.outputs[0]

@@ -58,10 +58,10 @@ def PrecalcDatasetMetadata(datasetName, datasetDir):
     outFile = path.join(datasetDir, "%s_metadata.csv" % (datasetName))
     df.to_csv(outFile)
     
-def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator):
+def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator, interpolation = "nearest"):
     # Load image
     imgBytes = productDict["imgs"][imgNr]["picture"]
-    img = load_img(io.BytesIO(imgBytes), target_size = targetSize)
+    img = load_img(io.BytesIO(imgBytes), target_size = targetSize, interpolation = interpolation)
     
     # Transform and standardize
     x = img_to_array(img)
@@ -77,7 +77,7 @@ def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator):
 class BSONIterator(Iterator):
     def __init__(self, bsonFile, productsMetaDf, imagesMetaDf, numClasses, imageDataGenerator,
                  targetSize, withLabels = True, batchSize = 32, 
-                 shuffle = False, seed = None):
+                 shuffle = False, seed = None, interpolation = "nearest"):
 
         self.file = open(bsonFile, "rb")
         self.productsMetaDf = productsMetaDf
@@ -87,6 +87,7 @@ class BSONIterator(Iterator):
         self.numClasses = numClasses
         self.imageDataGenerator = imageDataGenerator
         self.targetSize = tuple(targetSize)
+        self.interpolation = interpolation
         self.imageShape = self.targetSize + (3,)
 
         super().__init__(self.samples, batchSize, shuffle, seed)
@@ -117,7 +118,8 @@ class BSONIterator(Iterator):
 
             # Extract and preprocess image
             productDict = bson.BSON.decode(productDictBytes)
-            x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, self.imageDataGenerator)
+            x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, \
+                                        self.imageDataGenerator, interpolation = self.interpolation)
 
             # Save
             XBatch[batchId] = x

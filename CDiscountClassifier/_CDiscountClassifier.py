@@ -29,7 +29,9 @@ class CDiscountClassfier:
             "batchSize": 64,
             "epochs": 5,
             "trainSeed": 1000003,
-            "maxValImages": None,
+            "valImagesPerEpoch": None,
+            "trainImagesPerEpoch": None,
+            "trainAugmentation": {},
             }
         
         self.params["valTrainSplit"] = {
@@ -105,7 +107,8 @@ class CDiscountClassfier:
 
         # Image data generators 
         preproccesingFunc = _Models.PREPROCESS_FUNCS[params["model"]["name"]]
-        self._trainImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+        self._trainImageDataGenerator = ImageDataGenerator(\
+            preprocessing_function = preproccesingFunc, **params["trainAugmentation"])
         self._valImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
 
         # Iterators
@@ -143,20 +146,28 @@ class CDiscountClassfier:
                       optimizer = optimizer)
         print("Preparing model done.")
         
-        # Fit
-        print("Fitting model...")
+        # Callbacks
         callbacks = [
             keras.callbacks.TensorBoard(log_dir = self.trainingDir, write_graph = False),
             keras.callbacks.ModelCheckpoint(self.modelFilename, monitor = "val_acc", verbose = 1, save_best_only = True),
             TrainTimeStatsCallback(self.statsFilename)
             ]
          
-        stepsPerEpoch = self.trainMetaDf.shape[0] // self.batchSize
+        # Steps per epoch
+        stepsPerEpoch = max(1, self.trainMetaDf.shape[0] // self.batchSize)
         stepsPerValidation = max(1, self.valMetaDf.shape[0] // self.batchSize)
+
+        if params["trainImagesPerEpoch"] is not None:
+            stepsPerEpoch = max(stepsPerEpoch, self.params["trainImagesPerEpoch"] // self.batchSize)
         
-        if params["maxValImages"] is not None:
-            stepsPerValidation = max(stepsPerValidation, self.params["maxValImages"] // self.batchSize)
-         
+        if params["valImagesPerEpoch"] is not None:
+            stepsPerValidation = max(stepsPerValidation, self.params["valImagesPerEpoch"] // self.batchSize)
+
+        print("stepsPerEpoch", stepsPerEpoch, stepsPerEpoch * self.batchSize)
+        print("stepsPerValidation", stepsPerValidation, stepsPerValidation * self.batchSize)
+        
+        # Fit model 
+        print("Fitting model...")
         totalEpocs = params["epochs"]
         epochSpecificParams = params["epochSpecificParams"]
         for curEpoch in range(totalEpocs):
