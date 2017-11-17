@@ -37,15 +37,16 @@ if __name__ == "__main__":
             },
         "model": {
             "name": "Xception",
-            "kwargs": {}
+            "kwargs": {"trainable": "blocks", "trainableFromBlock": 10}
             },
         "optimizer": {
             "name": "Adam",
             "kwargs": {}
             },
         "epochSpecificParams":{
-            1: {"lr": 1e-3},
-            2: {"lr": 1e-4}
+            2: {"lrDecayCoef": 0.1},
+            4: {"lrDecayCoef": 0.1},
+            6: {"lrDecayCoef": 0.1},
             }
         }
 
@@ -55,8 +56,8 @@ if __name__ == "__main__":
         with open(ymlParamsFile, "r") as fin:
             params = yaml.safe_load(fin)
 
-    profile = cProfile.Profile()
-    profile.enable()
+    #profile = cProfile.Profile()
+    #profile.enable()
     
     m = CDiscountClassfier(**params)
     m.InitTrainingData()
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     tee = Tee(m.logFilename, "w")
     m.TrainModel(updateTrainingName = False)
         
-    profile.disable()
-    pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
+    #profile.disable()
+    #pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
     
     del tee

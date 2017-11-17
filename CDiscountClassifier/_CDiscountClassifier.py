@@ -45,13 +45,7 @@ class CDiscountClassfier:
         
         self.params["optimizer"] = {
             "name": "Adam",
-            "kwargs": {
-                "lr": 1e-3,
-                "beta_1": 0.9,
-                "beta_2": 0.999,
-                "epsilon": 1e-8,
-                "decay": 0.0
-                }
+            "kwargs": {}
             }
         self.params["epochSpecificParams"] = {}
                   
@@ -131,6 +125,7 @@ class CDiscountClassfier:
         print("Preparing model...")
         modelClass = _Models.MODELS[params["model"]["name"]]
         model = modelClass(self.imageShape, self.nClasses, **params["model"]["kwargs"])
+        model.summary()
         
         # Optimizer
         if params["optimizer"]["name"] == "Adam":

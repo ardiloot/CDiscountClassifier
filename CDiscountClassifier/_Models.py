@@ -8,7 +8,7 @@ def _SetLayerTrainable(model, pattern, trainable):
             if fnmatch(layer.name, pattern):
                 layer.trainable = trainable
 
-def MyXception(imageShape, nClasses, modeTrainable = "onlyTop"):
+def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock = None):
     modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
                                   weights = "imagenet")
     modelBase.trainable = False
@@ -25,12 +25,16 @@ def MyXception(imageShape, nClasses, modeTrainable = "onlyTop"):
     _SetLayerTrainable(model, "*", False)
     
     # Enable
-    if modeTrainable == "onlyTop":
+    if trainable == "onlyTop":
         _SetLayerTrainable(model, "predictions", True)
-    if modeTrainable == "full":
+    elif trainable == "full":
         _SetLayerTrainable(model, "*", True)
+    elif trainable == "blocks":
+        for i in range(trainableFromBlock, 15):
+            _SetLayerTrainable(model, "block%d_*" % (i), True)
+        _SetLayerTrainable(model, "predictions", True)
     else:
-        ValueError("Unknown modeTrainable %s" % (modeTrainable))
+        ValueError("Unknown trainable mode %s" % (trainable))
     
     return model
 

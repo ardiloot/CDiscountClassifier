@@ -15,7 +15,7 @@ r"""#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task={cpusPerTask}
-#SBATCH --mem={memMB:d}
+#SBATCH --mem={mem}
 
 #SBATCH --time={walltime}
 
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         "targetSize": (180, 180),
         "batchSize": 512,
         "epochs": 100,
-        "maxValImages": 100000,
+        "maxValImages": 200000,
         "valTrainSplit": {
             "splitPercentage": 0.2,
             "dropoutPercentage": 0.0,
@@ -71,17 +71,17 @@ if __name__ == "__main__":
             },
         "model": {
             "name": "Xception",
-            "kwargs": {}
+            "kwargs": {"trainable": "onlyTop", "trainableFromBlock": 10}
             },
         "optimizer": {
-            "name": "SGD",
-            "kwargs": {"lr": 1e-2}
+            "name": "Adam",
+            "kwargs": {"lr": 5e-3}
             },
         "epochSpecificParams":{
+            1: {"lrDecayCoef": 0.1},
             2: {"lrDecayCoef": 0.1},
+            3: {"lrDecayCoef": 0.1},
             4: {"lrDecayCoef": 0.1},
-            6: {"lrDecayCoef": 0.1},
-            8: {"lrDecayCoef": 0.1},
             }
         }
     
@@ -89,14 +89,14 @@ if __name__ == "__main__":
     resources = {
        "nodes": 1,
        "cpusPerTask": 5,
-       "memMB": 16000,
+       "mem": "16G",
        "walltime": "8-00:00:00",
        "gpus": "gpu:tesla:1"
     }
     
     # Sweep params
-    sweepParam = ("optimizer", "name")
-    sweepValues = ["SGD"]
+    sweepParam = ("model", "kwargs", "trainable")
+    sweepValues = ["blocks"]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)
