@@ -10,7 +10,7 @@ from keras.preprocessing.image import ImageDataGenerator
 
 from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, TrainTimeStatsCallback
-from CDiscountClassifier._HelperFunctions import RepeatAndLabel
+from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
 
 #===============================================================================
 # CDiscountClassfier
@@ -116,12 +116,12 @@ class CDiscountClassfier:
         bsonFile = path.join(self.datasetDir, "%s.bson" % (self.trainDatasetName))
         
         trainGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.trainMetaDf, \
-            self.nClasses, self._trainImageDataGenerator, self.targetSize, \
+            self.nClasses, self._trainImageDataGenerator, targetSize = self.targetSize, \
             withLabels = True, batchSize = self.batchSize, shuffle = True)
 
         valGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.valMetaDf, \
-            self.nClasses, self._trainImageDataGenerator, self.targetSize, \
-            withLabels = True, batchSize = self.batchSize, shuffle = True)
+            self.nClasses, self._trainImageDataGenerator, targetSize = self.targetSize, \
+            withLabels = True, batchSize = self.batchSize, shuffle = True, lock = trainGenerator.lock)
         print("Prepare iterators done.")
 
         # Model
@@ -158,10 +158,10 @@ class CDiscountClassfier:
         stepsPerValidation = max(1, self.valMetaDf.shape[0] // self.batchSize)
 
         if params["trainImagesPerEpoch"] is not None:
-            stepsPerEpoch = max(stepsPerEpoch, self.params["trainImagesPerEpoch"] // self.batchSize)
+            stepsPerEpoch = self.params["trainImagesPerEpoch"] // self.batchSize
         
         if params["valImagesPerEpoch"] is not None:
-            stepsPerValidation = max(stepsPerValidation, self.params["valImagesPerEpoch"] // self.batchSize)
+            stepsPerValidation = self.params["valImagesPerEpoch"] // self.batchSize
 
         print("stepsPerEpoch", stepsPerEpoch, stepsPerEpoch * self.batchSize)
         print("stepsPerValidation", stepsPerValidation, stepsPerValidation * self.batchSize)
@@ -198,6 +198,7 @@ class CDiscountClassfier:
                 epochs = curEpoch + 1,
                 workers = 5,
                 initial_epoch = curEpoch)
+            print("Fit generator done.")
             
         print("Model fit done.")
                 
