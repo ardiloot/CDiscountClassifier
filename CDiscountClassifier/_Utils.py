@@ -74,33 +74,69 @@ def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator, 
 # BSONIterator
 #===============================================================================
 
-class BSONIterator(Iterator):
+class BSONIterator:
     def __init__(self, bsonFile, productsMetaDf, imagesMetaDf, numClasses, imageDataGenerator,
-                 targetSize, withLabels = True, batchSize = 32, 
-                 shuffle = False, seed = None, interpolation = "nearest"):
+                 targetSize = None, withLabels = True, batchSize = None, 
+                 shuffle = True, seed = None, interpolation = "nearest", lock = None):
 
-        self.file = open(bsonFile, "rb")
+        self.bsonFile = bsonFile
         self.productsMetaDf = productsMetaDf
-        self.withLabels = withLabels
         self.imagesMetaDf = imagesMetaDf
-        self.samples = imagesMetaDf.shape[0]
         self.numClasses = numClasses
         self.imageDataGenerator = imageDataGenerator
         self.targetSize = tuple(targetSize)
+        
+        self.withLabels = withLabels
+        self.batchSize = batchSize
+        self.shuffle = shuffle
+        self.seed = seed
         self.interpolation = interpolation
+        self.lock = lock
+        
+        if self.lock is None:
+            self.lock = threading.RLock()
+
+        self.file = open(self.bsonFile, "rb")
         self.imageShape = self.targetSize + (3,)
+        self.samples = self.imagesMetaDf.shape[0]
+        self.nextIndex = 0
+        self.totalBatchesSeen = 0
+        
+        self._UpdateIndexArray()
 
-        super().__init__(self.samples, batchSize, shuffle, seed)
-        self.fileLock = threading.Lock()
+    def _UpdateIndexArray(self):
+        with self.lock:
+            # Set seed
+            if self.seed is not None:
+                np.random.seed(self.seed + self.totalBatchesSeen)
+        
+            # Index array
+            if self.shuffle:
+                self.indexArray = np.random.permutation(self.samples)
+            else:
+                self.indexArray = np.array(range(self.samples))
+            self.nextIndex = 0
 
-    def _get_batches_of_transformed_samples(self, indexArray):
+    def __next__(self):
+        with self.lock:
+            if self.nextIndex + self.batchSize > self.samples:
+                # Need to resuffle
+                self._UpdateIndexArray()
+            
+            indices = self.indexArray[self.nextIndex:self.nextIndex + self.batchSize].copy()
+            self.nextIndex += self.batchSize
+            self.totalBatchesSeen += 1
+            
+        return self._GetBatchesOfTransformedSamples(indices)
+ 
+    def _GetBatchesOfTransformedSamples(self, indexArray):
         XBatch = np.zeros((len(indexArray),) + self.imageShape, dtype = K.floatx())
         if self.withLabels:
             yBatch = np.zeros((len(indexArray), self.numClasses), dtype = K.floatx())
 
         for batchId, sampleId in enumerate(indexArray):
             # Lock and read sample
-            with self.fileLock:
+            with self.lock:
                 # Image data
                 imageData = self.imagesMetaDf.iloc[sampleId]
                 productId = imageData["productId"]
@@ -115,7 +151,7 @@ class BSONIterator(Iterator):
                 # Read file
                 self.file.seek(offset)
                 productDictBytes = self.file.read(length)
-
+            
             # Extract and preprocess image
             productDict = bson.BSON.decode(productDictBytes)
             x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, \
@@ -131,14 +167,9 @@ class BSONIterator(Iterator):
         else:
             return XBatch
 
-    def next(self):
-        with self.lock:
-            index_array = next(self.index_generator)
-        return self._get_batches_of_transformed_samples(index_array)
- 
- #==============================================================================
- # TrainTimeStatsCallback
- #==============================================================================
+#==============================================================================
+# TrainTimeStatsCallback
+#==============================================================================
  
 class TrainTimeStatsCallback(keras.callbacks.Callback):
 
