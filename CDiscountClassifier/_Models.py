@@ -25,7 +25,7 @@ def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock =
     # Loead wights
     model.epochsCompleted = 0
     if weights is not None:
-        wFilename = path.join(weightsDir, weights) if weightsDir is not None else weights
+        wFilename = path.abspath(path.join(weightsDir, weights)) if weightsDir is not None else weights
         print("Loading weights from", wFilename)
         model.load_weights(wFilename)
         epochsCompleted = int(path.splitext(path.basename(wFilename))[0].split("-")[0].split(".")[-1])

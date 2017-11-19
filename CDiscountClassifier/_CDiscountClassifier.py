@@ -37,6 +37,7 @@ class CDiscountClassfier:
             "trainImagesPerEpoch": None,
             "trainAugmentation": {},
             "predictMethod": "meanActivations",
+            "testDropout": 0.0,
             }
         
         self.params["valTrainSplit"] = {
@@ -112,11 +113,9 @@ class CDiscountClassfier:
         print("Init test data ...")
         # Products metadata
         self.testProductsMetaDf = self._ReadProductsMetadata(self.testDatasetName)
-        
-        # Split to train and val
         self.testMetaDf,_ = self._MakeTrainValSets(self.testProductsMetaDf, \
-            splitPercentage = 0.0, dropoutPercentage = 0.0)
-        print("Test", self.testMetaDf.shape)
+            splitPercentage = 0.0, dropoutPercentage = self.params["testDropout"])
+        print("Test", self.testProductsMetaDf.shape, self.testMetaDf.shape)
         
         print("Init iterators...")
         bsonFile = path.join(self.datasetDir, "%s.bson" % (self.testDatasetName))
@@ -296,7 +295,6 @@ class CDiscountClassfier:
         
         resDf = pd.DataFrame(res, columns = ["_id", "category_id"])
         resDf.set_index("_id", inplace = True)
-        print(resDf.head())
         return resDf
     
     def ValidateModel(self):

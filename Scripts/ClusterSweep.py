@@ -27,7 +27,7 @@ source activate python_3.6.2
 python --version
 
 export CDISCOUNT_DATASET=/tmp/ardiloot/cdiscount/dataset
-echo $CDISCOUNT_DATASET
+printenv
 
 {cmd}
 """
@@ -62,10 +62,11 @@ if __name__ == "__main__":
         "trainDatasetName": "train",
         "targetSize": (180, 180),
         "batchSize": 450,
-        "epochs": 200,
+        "epochs": 10,
         "valImagesPerEpoch": 10000,
         "trainImagesPerEpoch": 2000000,
         "predictMethod": "meanActivations",
+        "testDropout": 0.0,
         "trainAugmentation": {
             "zoom_range": 0.1, 
             "width_shift_range": 0.1, 
@@ -82,7 +83,7 @@ if __name__ == "__main__":
             "kwargs": {
                 "trainable": "blocks", 
                 "trainableFromBlock": 10,
-                "weights": "20171118-162839_Xception_trainAugmentation_nr_0\model.11-0.64.hdf5"
+                "weights": "20171118-162839_Xception_trainAugmentation_nr_0/model.11-0.64.hdf5"
                 },
             "trainMode": "continue",  
             },
@@ -102,7 +103,7 @@ if __name__ == "__main__":
        "nodes": 1,
        "cpusPerTask": 5,
        "mem": "32G",
-       "walltime": "0-05:00:00",
+       "walltime": "0-07:00:00",
        "gpus": "gpu:tesla:1"
     }
     
