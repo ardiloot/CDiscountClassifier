@@ -113,10 +113,9 @@ class CDiscountClassfier:
         print("Init test data ...")
         # Products metadata
         self.testProductsMetaDf = self._ReadProductsMetadata(self.testDatasetName)
-        self.testMetaDf,_ = self._MakeTrainValSets(self.testProductsMetaDf, \
+        self.testMetaDf, _ = self._MakeTrainValSets(self.testProductsMetaDf, \
             splitPercentage = 0.0, dropoutPercentage = self.params["testDropout"])
         print("Test", self.testProductsMetaDf.shape, self.testMetaDf.shape)
-        
         print("Init iterators...")
         bsonFile = path.join(self.datasetDir, "%s.bson" % (self.testDatasetName))
         preproccesingFunc = _Models.PREPROCESS_FUNCS[self.params["model"]["name"]]
@@ -340,6 +339,7 @@ class CDiscountClassfier:
         np.random.seed(seed)
         indicesByGroups = productsMetaDf.groupby("categoryId", sort = False).indices
         numImgsColumnNr = productsMetaDf.columns.get_loc("numImgs")
+        valMinSize = 0 if splitPercentage <= 0.0 else 1
         
         resVal, resTrain = [], []
         for _, indices in indicesByGroups.items():
@@ -351,7 +351,7 @@ class CDiscountClassfier:
                 indices = np.random.choice(indices, toKeep, replace = False)
             
             # Validation set
-            validationSize = max(min(1, len(indices) - 1), round(len(indices) * splitPercentage))
+            validationSize = max(min(valMinSize, len(indices) - 1), round(len(indices) * splitPercentage))
             validationIndices = np.random.choice(indices, validationSize, replace = False)
             validationIndicesSet = set(validationIndices)
             validationProductIds = productsMetaDf.index[validationIndices]
