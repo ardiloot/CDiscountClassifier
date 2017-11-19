@@ -152,9 +152,9 @@ class CDiscountClassfier:
 
         # Model
         print("Preparing model...")
-        modelClass = _Models.MODELS[params["model"]["name"]]
-        model = modelClass(self.imageShape, self.nClasses, weightsDir = self.resultsDir,
-                           **params["model"]["kwargs"])
+        model = _Models.GetModel(self.imageShape, self.nClasses, \
+            weightsDir = self.resultsDir, name = params["model"]["name"], \
+            **params["model"]["kwargs"])
         model.summary()
         
         # Train mode
@@ -298,12 +298,13 @@ class CDiscountClassfier:
         return resDf
     
     def ValidateModel(self):
-        self.Predict(self.valGenerator, evaluate = True)
+        df = self.Predict(self.valGenerator, evaluate = True)
+        df.to_csv(self.validationFilename + ".gz", compression = "gzip")
         
     def PrepareSubmission(self):
         print("PrepareSubmission...")
         df = self.Predict(self.testGenerator, evaluate = False)
-        df.to_csv(self.submissionFilename)
+        df.to_csv(self.submissionFilename + ".gz", compression = "gzip")
         print("PrepareSubmission done.")
            
     def _ReadCategoryTree(self):
@@ -422,6 +423,12 @@ class CDiscountClassfier:
     @property
     def submissionFilename(self):
         return path.join(self.trainingDir, "submission.csv")
+    
+    @property
+    def validationFilename(self):
+        return path.join(self.trainingDir, "validation.csv")
+
+
 
 if __name__ == "__main__":
     pass
