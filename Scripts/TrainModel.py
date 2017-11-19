@@ -35,7 +35,7 @@ if __name__ == "__main__":
         "valImagesPerEpoch": 50,
         "valTrainSplit": {
             "splitPercentage": 0.2,
-            "dropoutPercentage": 0.0,
+            "dropoutPercentage": 0.999,
             "seed": 0
             },
         "trainAugmentation": {
@@ -70,8 +70,8 @@ if __name__ == "__main__":
         with open(ymlParamsFile, "r") as fin:
             params = yaml.safe_load(fin)
 
-    #profile = cProfile.Profile()
-    #profile.enable()
+    profile = cProfile.Profile()
+    
     
     m = CDiscountClassfier(**params)
     m.InitTrainingData()
@@ -79,8 +79,12 @@ if __name__ == "__main__":
     
     tee = Tee(m.logFilename, "w")
     m.TrainModel(updateTrainingName = False)
-        
-    #profile.disable()
-    #pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
+    
+    m.InitTestData()
+    
+    profile.enable()
+    m.ValidateModel()
+    profile.disable()
+    pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
     
     del tee

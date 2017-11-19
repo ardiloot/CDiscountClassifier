@@ -61,10 +61,17 @@ if __name__ == "__main__":
         "datasetDir": None,
         "trainDatasetName": "train",
         "targetSize": (180, 180),
-        "batchSize": 512,
-        "epochs": 100,
+        "batchSize": 450,
+        "epochs": 200,
         "valImagesPerEpoch": 10000,
         "trainImagesPerEpoch": 2000000,
+        "predictMethod": "meanActivations",
+        "trainAugmentation": {
+            "zoom_range": 0.1, 
+            "width_shift_range": 0.1, 
+            "height_shift_range": 0.1, 
+            "horizontal_flip": True
+            },
         "valTrainSplit": {
             "splitPercentage": 0.2,
             "dropoutPercentage": 0.0,
@@ -72,17 +79,21 @@ if __name__ == "__main__":
             },
         "model": {
             "name": "Xception",
-            "kwargs": {"trainable": "onlyTop", "trainableFromBlock": 10}
+            "kwargs": {
+                "trainable": "blocks", 
+                "trainableFromBlock": 10,
+                "weights": "20171118-162839_Xception_trainAugmentation_nr_0\model.11-0.64.hdf5"
+                },
+            "trainMode": "continue",  
             },
         "optimizer": {
             "name": "Adam",
             "kwargs": {"lr": 5e-3}
             },
         "epochSpecificParams":{
-            2: {"lrDecayCoef": 0.1},
             4: {"lrDecayCoef": 0.1},
-            6: {"lrDecayCoef": 0.1},
             8: {"lrDecayCoef": 0.1},
+            12: {"lrDecayCoef": 0.1},
             }
         }
     
@@ -90,14 +101,14 @@ if __name__ == "__main__":
     resources = {
        "nodes": 1,
        "cpusPerTask": 5,
-       "mem": "16G",
-       "walltime": "8-00:00:00",
+       "mem": "32G",
+       "walltime": "0-05:00:00",
        "gpus": "gpu:tesla:1"
     }
     
     # Sweep params
-    sweepParam = ("model", "kwargs", "trainable")
-    sweepValues = ["blocks"]
+    sweepParam = ("batchSize", )
+    sweepValues = [450]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)

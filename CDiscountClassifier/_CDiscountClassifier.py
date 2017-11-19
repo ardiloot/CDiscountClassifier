@@ -28,6 +28,7 @@ class CDiscountClassfier:
             "datasetDir": None,
             "resultsDir": "../../results",
             "trainDatasetName": None,
+            "testDatasetName": "test",
             "targetSize": (180, 180),
             "batchSize": 64,
             "epochs": 5,
@@ -77,15 +78,56 @@ class CDiscountClassfier:
                 
     def InitTrainingData(self):
         # Products metadata
-        self.productsMetaDf = self._ReadProductsMetadata(self.trainDatasetName)
+        self.trainProductsMetaDf = self._ReadProductsMetadata(self.trainDatasetName)
         
         # Split to train and val
         print("Making train/val splits...")
-        self.trainMetaDf, self.valMetaDf = self._MakeTrainValSets(self.productsMetaDf, \
+        self.trainMetaDf, self.valMetaDf = self._MakeTrainValSets(self.trainProductsMetaDf, \
                                             **self.params["valTrainSplit"])
         print("Train", self.trainMetaDf.shape)
         print("Val", self.valMetaDf.shape)
         print("Making train/val splits done.")
+        
+        # Image data generators 
+        print("Init iterators...")
+        preproccesingFunc = _Models.PREPROCESS_FUNCS[self.params["model"]["name"]]
+        trainImageDataGenerator = ImageDataGenerator(\
+            preprocessing_function = preproccesingFunc, **self.params["trainAugmentation"])
+        valImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+
+        # Iterators
+        bsonFile = path.join(self.datasetDir, "%s.bson" % (self.trainDatasetName))
+        
+        self.trainGenerator = BSONIterator(bsonFile, self.trainProductsMetaDf, self.trainMetaDf, \
+            self.nClasses, trainImageDataGenerator, targetSize = self.targetSize, \
+            withLabels = True, batchSize = self.batchSize, shuffle = True)
+
+        self.valGenerator = BSONIterator(bsonFile, self.trainProductsMetaDf, self.valMetaDf, \
+            self.nClasses, valImageDataGenerator, targetSize = self.targetSize, \
+            withLabels = True, batchSize = self.batchSize, shuffle = True, lock = self.trainGenerator.lock)
+        
+        print("Init iterators done.")
+   
+    def InitTestData(self):
+        print("Init test data ...")
+        # Products metadata
+        self.testProductsMetaDf = self._ReadProductsMetadata(self.testDatasetName)
+        
+        # Split to train and val
+        self.testMetaDf,_ = self._MakeTrainValSets(self.testProductsMetaDf, \
+            splitPercentage = 0.0, dropoutPercentage = 0.0)
+        print("Test", self.testMetaDf.shape)
+        
+        print("Init iterators...")
+        bsonFile = path.join(self.datasetDir, "%s.bson" % (self.testDatasetName))
+        preproccesingFunc = _Models.PREPROCESS_FUNCS[self.params["model"]["name"]]
+        testImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+        
+        self.testGenerator = BSONIterator(bsonFile, self.testProductsMetaDf, self.testMetaDf, \
+            self.nClasses, testImageDataGenerator, targetSize = self.targetSize, \
+            withLabels = False, batchSize = self.batchSize, shuffle = False)
+        print("Init iterators done.")
+        print("Init test data done.")
                 
     def TrainModel(self, updateTrainingName = True, newTrainingName = None):
         # Training name
@@ -108,27 +150,6 @@ class CDiscountClassfier:
         # Save params
         with open(path.join(self.trainingDir, "parameters.yml"), "w") as fout:
             yaml.safe_dump(self.params, fout)
-
-        # Image data generators 
-        preproccesingFunc = _Models.PREPROCESS_FUNCS[params["model"]["name"]]
-        self._trainImageDataGenerator = ImageDataGenerator(\
-            preprocessing_function = preproccesingFunc, **params["trainAugmentation"])
-        self._valImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
-
-        # Iterators
-        print("Prepare iterators...")
-        bsonFile = path.join(self.datasetDir, "%s.bson" % (self.trainDatasetName))
-        
-        trainGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.trainMetaDf, \
-            self.nClasses, self._trainImageDataGenerator, targetSize = self.targetSize, \
-            withLabels = True, batchSize = self.batchSize, shuffle = True)
-
-        valGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.valMetaDf, \
-            self.nClasses, self._valImageDataGenerator, targetSize = self.targetSize, \
-            withLabels = True, batchSize = self.batchSize, shuffle = True, lock = trainGenerator.lock)
-        self.trainGenerator = trainGenerator
-        self.valGenerator = valGenerator
-        print("Prepare iterators done.")
 
         # Model
         print("Preparing model...")
@@ -202,9 +223,9 @@ class CDiscountClassfier:
             SetEpochParams(model, curEpoch, epochSpecificParams)
             
             print ("Start training for epoch %d/%d" % (curEpoch, totalEpocs))
-            model.fit_generator(trainGenerator,
+            model.fit_generator(self.trainGenerator,
                 steps_per_epoch = stepsPerEpoch,
-                validation_data = valGenerator,
+                validation_data = self.valGenerator,
                 validation_steps = stepsPerValidation,
                 callbacks = callbacks,
                 epochs = curEpoch + 1,
@@ -280,6 +301,12 @@ class CDiscountClassfier:
     
     def ValidateModel(self):
         self.Predict(self.valGenerator, evaluate = True)
+        
+    def PrepareSubmission(self):
+        print("PrepareSubmission...")
+        df = self.Predict(self.testGenerator, evaluate = False)
+        df.to_csv(self.submissionFilename)
+        print("PrepareSubmission done.")
            
     def _ReadCategoryTree(self):
         # Read
@@ -355,6 +382,10 @@ class CDiscountClassfier:
         return self.params["trainDatasetName"]
 
     @property
+    def testDatasetName(self):
+        return self.params["testDatasetName"]
+
+    @property
     def targetSize(self):
         return self.params["targetSize"]
 
@@ -389,6 +420,10 @@ class CDiscountClassfier:
     @property
     def logFilename(self):
         return path.join(self.trainingDir, "log.txt")
+    
+    @property
+    def submissionFilename(self):
+        return path.join(self.trainingDir, "submission.csv")
 
 if __name__ == "__main__":
     pass
