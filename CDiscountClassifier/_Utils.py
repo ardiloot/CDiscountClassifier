@@ -129,43 +129,89 @@ class BSONIterator:
             
         return self._GetBatchesOfTransformedSamples(indices)
  
-    def _GetBatchesOfTransformedSamples(self, indexArray):
+    def IterBatches(self):
+        with self.lock:
+            for index in range(0, self.samples, self.batchSize):
+                indices = np.array(range(index, min(self.samples, index + self.batchSize)))
+                r = self._GetBatchesOfTransformedSamples(indices)
+                yield r
+ 
+    def GetBatches(self, indices):
+        return self._GetBatchesOfTransformedSamples(indices)
+    
+    def GetGroupedBatches(self):
+        with self.lock:
+            groupedByProducts = list(self.imagesMetaDf.groupby("productId").indices.items())
+            
+            groupIndex = 0
+            while groupIndex < len(groupedByProducts): 
+                # Make batch
+                productIds = []
+                imageMetaIndices = []
+                imageBatchIndices = []
+                batchLen = 0
+                while groupIndex < len(groupedByProducts) and batchLen < self.batchSize:
+                    productId, ids = groupedByProducts[groupIndex]
+                    if batchLen + len(ids) > self.batchSize:
+                        break
+                    
+                    productIds.append(productId)
+                    imageMetaIndices.append(ids)
+                    imageBatchIndices.append(range(batchLen, batchLen + len(ids)))
+                    batchLen += len(ids)
+                    groupIndex += 1
+                    
+                # Get images
+                data = self._GetBatchesOfTransformedSamples(np.concatenate(imageMetaIndices), withLabels = False)        
+                
+                # Yield
+                yield productIds, imageBatchIndices, data
+                    
+    def _GetBatchesOfTransformedSamples(self, indexArray, withLabels = None):
+        if withLabels is None:
+            withLabels = self.withLabels
+            
         XBatch = np.zeros((len(indexArray),) + self.imageShape, dtype = K.floatx())
-        if self.withLabels:
+        if withLabels:
             yBatch = np.zeros((len(indexArray), self.numClasses), dtype = K.floatx())
 
         for batchId, sampleId in enumerate(indexArray):
-            # Lock and read sample
-            with self.lock:
-                # Image data
-                imageData = self.imagesMetaDf.iloc[sampleId]
-                productId = imageData["productId"]
-                imgNr = imageData["imgNr"]
-                
-                # Product data
-                productData = self.productsMetaDf.loc[productId]
-                offset = productData["offset"]
-                length = productData["length"]
-                classId = productData["classId"]
-
-                # Read file
-                self.file.seek(offset)
-                productDictBytes = self.file.read(length)
-            
-            # Extract and preprocess image
-            productDict = bson.BSON.decode(productDictBytes)
-            x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, \
-                                        self.imageDataGenerator, interpolation = self.interpolation)
+            # read image
+            x, classId = self._LoadImg(self.imagesMetaDf, sampleId)
 
             # Save
             XBatch[batchId] = x
-            if self.withLabels:
+            if withLabels:
                 yBatch[batchId, classId] = 1
 
-        if self.withLabels:
+        if withLabels:
             return XBatch, yBatch
         else:
             return XBatch
+
+    def _LoadImg(self, df, sampleId):
+        with self.lock:
+            # Image data
+            imageData = df.iloc[sampleId]
+            productId = imageData["productId"]
+            imgNr = imageData["imgNr"]
+            
+            # Product data
+            productData = self.productsMetaDf.loc[productId]
+            offset = productData["offset"]
+            length = productData["length"]
+            classId = productData["classId"]
+
+            # Read file
+            self.file.seek(offset)
+            productDictBytes = self.file.read(length)
+        
+        # Extract and preprocess image
+        productDict = bson.BSON.decode(productDictBytes)
+        x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, \
+                                    self.imageDataGenerator, interpolation = self.interpolation)
+        
+        return x, classId
 
 def SetEpochParams(model, curEpoch, epochSpecificParams):
     if curEpoch in epochSpecificParams:

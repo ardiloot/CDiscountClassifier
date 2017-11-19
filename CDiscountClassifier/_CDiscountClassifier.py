@@ -3,8 +3,10 @@ import numpy as np
 import pandas as pd
 import keras
 import yaml
+import keras.backend as K
 
 from os import path
+from scipy import stats
 from datetime import datetime
 from keras.preprocessing.image import ImageDataGenerator
 
@@ -33,6 +35,7 @@ class CDiscountClassfier:
             "valImagesPerEpoch": None,
             "trainImagesPerEpoch": None,
             "trainAugmentation": {},
+            "predictMethod": "meanActivations",
             }
         
         self.params["valTrainSplit"] = {
@@ -121,8 +124,10 @@ class CDiscountClassfier:
             withLabels = True, batchSize = self.batchSize, shuffle = True)
 
         valGenerator = BSONIterator(bsonFile, self.productsMetaDf, self.valMetaDf, \
-            self.nClasses, self._trainImageDataGenerator, targetSize = self.targetSize, \
+            self.nClasses, self._valImageDataGenerator, targetSize = self.targetSize, \
             withLabels = True, batchSize = self.batchSize, shuffle = True, lock = trainGenerator.lock)
+        self.trainGenerator = trainGenerator
+        self.valGenerator = valGenerator
         print("Prepare iterators done.")
 
         # Model
@@ -207,9 +212,75 @@ class CDiscountClassfier:
                 initial_epoch = curEpoch)
             print("Fit generator done.")
             
+        self.model = model
         print("Model fit done.")
                 
-
+    def Predict(self, bsonIterator, evaluate = False):
+        print("Predict")
+        
+        predictMethods = {
+            "meanActivations": lambda x: np.argmax(np.mean(x, axis = 0, keepdims = True), axis = 1)[0],
+            "productActivations": lambda x: np.argmax(np.prod(x, axis = 0, keepdims = True), axis = 1)[0],
+            "rmsActivations": lambda x: np.argmax(np.mean(x ** 2.0, axis = 0, keepdims = True), axis = 1)[0],
+            "firstImage": lambda x: np.argmax(x, axis = 1)[0],
+            "topCategory": lambda x: stats.mode(np.argmax(x, axis = 1))[0][0],
+            }
+        
+        finalPredictMethod = self.params["predictMethod"]
+        if finalPredictMethod not in predictMethods:
+            raise ValueError("Unknown predictMethod" , finalPredictMethod)
+        
+        GetActivations = lambda x: K.function([K.learning_phase()] + self.model.inputs, self.model.outputs)([0, x])[0]
+       
+        res = []
+        correctPredictions = dict((k, 0) for k in predictMethods)
+        imagesProcessed = 0
+        totalPredictions = 0
+        
+        for productIds, imageBatchIndices, XData in bsonIterator.GetGroupedBatches():
+            print("Predict %d/%d (%.2f %%) (batch %d)" % (imagesProcessed, \
+                bsonIterator.imagesMetaDf.shape[0],
+                100 * imagesProcessed / bsonIterator.imagesMetaDf.shape[0],
+                XData.shape[0]))
+            
+            # Predict
+            activations = GetActivations(XData)
+            
+            # Combine multi-image predictions
+            for productId, ids in zip(productIds, imageBatchIndices):
+                if evaluate:
+                    trueCategory = bsonIterator.productsMetaDf.loc[productId, "categoryId"]
+                        
+                for predictMethodName, predictFunc in predictMethods.items():
+                    predictedClass = predictFunc(activations[ids, :])
+                    predictedCategory = self._mapClassToCategory[predictedClass]
+                    
+                    if evaluate:
+                        if predictedCategory == trueCategory:
+                            correctPredictions[predictMethodName] += 1
+                    
+                    if predictMethodName == finalPredictMethod:    
+                        res.append([productId, predictedCategory])
+                        
+                totalPredictions += 1
+                
+            # Print evaluation
+            if evaluate:
+                for predictMethodName in predictMethods:
+                    print("Accuracy (%s) %.3f" % (predictMethodName, correctPredictions[predictMethodName] / totalPredictions))
+            
+            # Increase counters
+            imagesProcessed += XData.shape[0]
+        print("Predict done.")
+        
+        resDf = pd.DataFrame(res, columns = ["_id", "category_id"])
+        resDf.set_index("_id", inplace = True)
+        print(resDf.head())
+        return resDf
+    
+    def ValidateModel(self):
+        self.Predict(self.valGenerator, evaluate = True)
+           
     def _ReadCategoryTree(self):
         # Read
         df = pd.read_csv(path.join(self.datasetDir, "category_names.csv"))
@@ -221,7 +292,7 @@ class CDiscountClassfier:
         
         # Build index (categoryId -> classId) and (classId -> catecoryId)
         self._mapCategoryToClass = dict(zip(df.categoryId, df.classId))
-        self._mapClassToCategory = dict(zip(df.categoryId, df.classId))
+        self._mapClassToCategory = dict(zip(df.classId, df.categoryId))
         
         # Add not cat mapping
         self._mapCategoryToClass[-1] = -1
