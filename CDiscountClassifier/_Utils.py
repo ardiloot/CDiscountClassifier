@@ -167,6 +167,24 @@ class BSONIterator:
         else:
             return XBatch
 
+def SetEpochParams(model, curEpoch, epochSpecificParams):
+    if curEpoch in epochSpecificParams:
+        print("Update optimizer params:", epochSpecificParams[curEpoch])
+        oldLr = keras.backend.get_value(model.optimizer.lr)
+        
+        if "lr" in epochSpecificParams[curEpoch] and "lrDecayCoef" in epochSpecificParams[curEpoch]:
+            raise ValueError("Only one (lr or lrDecayCoef) can be specified")
+        
+        for k, v in epochSpecificParams[curEpoch].items():
+            if k == "lr":
+                keras.backend.set_value(model.optimizer.lr, v)
+            elif k == "lrDecayCoef":
+                curLr = keras.backend.get_value(model.optimizer.lr)
+                keras.backend.set_value(model.optimizer.lr, v * curLr)
+            else:
+                raise ValueError("Unknown param %s" % (k))
+        print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
+
 #==============================================================================
 # TrainTimeStatsCallback
 #==============================================================================

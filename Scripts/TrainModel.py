@@ -12,6 +12,7 @@ class Tee(object):
         self.file = open(name, mode)
         self.stdout = sys.stdout
         sys.stdout = self
+        sys.stderr = self
         
     def __del__(self):
         sys.stdout = self.stdout
@@ -27,12 +28,14 @@ if __name__ == "__main__":
         "datasetDir": None,
         "trainDatasetName": "train",
         "resultsDir": r"C:\Users\Ardi\Downloads\results",
-        "targetSize": (90, 90),
-        "batchSize": 64,
+        "targetSize": (180, 180),
+        "batchSize": 32,
         "epochs": 3,
+        "trainImagesPerEpoch": 100,
+        "valImagesPerEpoch": 50,
         "valTrainSplit": {
             "splitPercentage": 0.2,
-            "dropoutPercentage": 0.9999,
+            "dropoutPercentage": 0.0,
             "seed": 0
             },
         "trainAugmentation": {
@@ -43,7 +46,12 @@ if __name__ == "__main__":
             },
         "model": {
             "name": "Xception",
-            "kwargs": {"trainable": "onlyTop", "trainableFromBlock": 10}
+            "kwargs": {
+                "trainable": "blocks",
+                "trainableFromBlock": 10,
+                "weights": "20171118-162839_Xception_trainAugmentation_nr_0\model.11-0.64.hdf5"
+                },
+            "trainMode": "continue",  
             },
         "optimizer": {
             "name": "Adam",

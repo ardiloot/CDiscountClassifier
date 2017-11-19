@@ -9,7 +9,8 @@ from datetime import datetime
 from keras.preprocessing.image import ImageDataGenerator
 
 from CDiscountClassifier import _Models
-from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, TrainTimeStatsCallback
+from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
+    TrainTimeStatsCallback, SetEpochParams
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
 
 #===============================================================================
@@ -127,8 +128,20 @@ class CDiscountClassfier:
         # Model
         print("Preparing model...")
         modelClass = _Models.MODELS[params["model"]["name"]]
-        model = modelClass(self.imageShape, self.nClasses, **params["model"]["kwargs"])
+        model = modelClass(self.imageShape, self.nClasses, weightsDir = self.resultsDir,
+                           **params["model"]["kwargs"])
         model.summary()
+        
+        # Train mode
+        trainMode = params["model"]["trainMode"] if "trainMode" in params["model"] else "continue"
+        print("epochsCompleted", model.epochsCompleted, trainMode)
+        startEpoch = 0
+        if trainMode == "restart":
+            startEpoch = 0
+        elif trainMode == "continue":
+            startEpoch = model.epochsCompleted
+        else:
+            raise ValueError("Unkonwn trainMode", trainMode)
         
         # Optimizer
         if params["optimizer"]["name"] == "Adam":
@@ -170,24 +183,18 @@ class CDiscountClassfier:
         print("Fitting model...")
         totalEpocs = params["epochs"]
         epochSpecificParams = params["epochSpecificParams"]
-        for curEpoch in range(totalEpocs):
+        
+        # Set epoch params
+        for curEpoch in range(0, startEpoch):
+            SetEpochParams(model, curEpoch, epochSpecificParams) 
+        
+        if startEpoch >= totalEpocs:
+            print("Model already fitted.")
+        
+        # Iterate over epochs
+        for curEpoch in range(startEpoch, totalEpocs):
             # Set learning rate
-            if curEpoch in epochSpecificParams:
-                print("Update optimizer params:", epochSpecificParams[curEpoch])
-                oldLr = keras.backend.get_value(model.optimizer.lr)
-                
-                if "lr" in epochSpecificParams[curEpoch] and "lrDecayCoef" in epochSpecificParams[curEpoch]:
-                    raise ValueError("Only one (lr or lrDecayCoef) can be specified")
-                
-                for k, v in epochSpecificParams[curEpoch].items():
-                    if k == "lr":
-                        keras.backend.set_value(model.optimizer.lr, v)
-                    elif k == "lrDecayCoef":
-                        curLr = keras.backend.get_value(model.optimizer.lr)
-                        keras.backend.set_value(model.optimizer.lr, v * curLr)
-                    else:
-                        raise ValueError("Unknown param %s" % (k))
-                print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
+            SetEpochParams(model, curEpoch, epochSpecificParams)
             
             print ("Start training for epoch %d/%d" % (curEpoch, totalEpocs))
             model.fit_generator(trainGenerator,

@@ -1,3 +1,4 @@
+from os import path
 from fnmatch import fnmatch
 from keras.models import Model
 from keras.layers import Dense, GlobalAveragePooling2D
@@ -8,7 +9,9 @@ def _SetLayerTrainable(model, pattern, trainable):
             if fnmatch(layer.name, pattern):
                 layer.trainable = trainable
 
-def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock = None):
+def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock = None,
+               weights = None, weightsDir = None):
+    
     modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
                                   weights = "imagenet")
     
@@ -18,6 +21,15 @@ def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock =
     x = Dense(nClasses, activation = "softmax", name = 'predictions')(x)
   
     model = Model(modelBase.inputs, x, name='xception')
+    
+    # Loead wights
+    model.epochsCompleted = 0
+    if weights is not None:
+        wFilename = path.join(weightsDir, weights) if weightsDir is not None else weights
+        print("Loading weights from", wFilename)
+        model.load_weights(wFilename)
+        epochsCompleted = int(path.splitext(path.basename(wFilename))[0].split("-")[0].split(".")[-1])
+        model.epochsCompleted = epochsCompleted
     
     # Freeze model
     _SetLayerTrainable(model, "*", False)
