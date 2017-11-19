@@ -12,7 +12,7 @@ from keras.preprocessing.image import ImageDataGenerator
 
 from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
-    TrainTimeStatsCallback, SetEpochParams
+    TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
 
 #===============================================================================
@@ -187,7 +187,7 @@ class CDiscountClassfier:
         # Callbacks
         callbacks = [
             keras.callbacks.TensorBoard(log_dir = self.trainingDir, write_graph = False),
-            keras.callbacks.ModelCheckpoint(self.modelFilename, monitor = "val_acc", verbose = 1, save_best_only = True),
+            MultiGPUModelCheckpoint(self.modelFilename, monitor = "val_acc", verbose = 1, save_best_only = True),
             TrainTimeStatsCallback(self.statsFilename)
             ]
          

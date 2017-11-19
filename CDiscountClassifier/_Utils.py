@@ -3,6 +3,7 @@ import bson
 import struct
 import threading
 import keras
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -288,6 +289,20 @@ class TrainTimeStatsCallback(keras.callbacks.Callback):
                 row.append("")
         self.file.write("%s\n" % ("\t".join(map(str, row))))
         self.file.flush()
+     
+#===============================================================================
+# MultiGPUModelCheckpoint
+#===============================================================================
+
+class MultiGPUModelCheckpoint(keras.callbacks.ModelCheckpoint):
+    def set_model(self, model):
+        if hasattr(model, "modelCPU"):
+            print("MultiGPUModelCheckpoint:", "Using multiple GPUs")
+            self.model = model.modelCPU
+        else:
+            print("MultiGPUModelCheckpoint:", "Using single/no GPUs")
+            self.model = model
+        
         
 if __name__ == "__main__":
     pass
