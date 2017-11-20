@@ -24,20 +24,20 @@ def GetModel(imageShape, nClasses, name = None, weights = None, \
             model = modelClass(imageShape, nClasses, **kwargs)
 
     # Load weights
-    model.epochsCompleted = 0
+    epochsCompleted = 0
     if weights is not None:
         wFilename = path.abspath(path.join(weightsDir, weights)) if weightsDir is not None else weights
         print("Loading weights from", wFilename)
         model.load_weights(wFilename)
         epochsCompleted = int(path.splitext(path.basename(wFilename))[0].split("-")[0].split(".")[-1])
-        model.epochsCompleted = epochsCompleted
         
     # Make parallel
     if gpus >= 2:
         modelCPU = model
         model = multi_gpu_model(modelCPU, gpus = gpus)
         model.modelCPU = modelCPU
-        
+    model.epochsCompleted = epochsCompleted
+    
     return model
 
 def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock = None):
