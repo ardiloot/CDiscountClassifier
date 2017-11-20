@@ -3,14 +3,14 @@ import bson
 import struct
 import threading
 import keras
-import warnings
 
 import numpy as np
 import pandas as pd
 
 from os import path
 from keras import backend as K
-from keras.preprocessing.image import load_img, img_to_array, Iterator
+from keras.preprocessing.image import load_img, img_to_array
+from keras.utils.data_utils import GeneratorEnqueuer
 
 #===============================================================================
 # Functions
@@ -136,14 +136,34 @@ class BSONIterator:
                 indices = np.array(range(index, min(self.samples, index + self.batchSize)))
                 r = self._GetBatchesOfTransformedSamples(indices)
                 yield r
- 
-    def GetBatches(self, indices):
-        return self._GetBatchesOfTransformedSamples(indices)
     
-    def GetGroupedBatches(self):
-        with self.lock:
-            groupedByProducts = list(self.imagesMetaDf.groupby("productId").indices.items())
+    def IterGroupedBatches(self, workers = 5, maxQueueSize = 10, withLabels = False):
+        
+        class BatchesIterator():
             
+            def __init__(self, bsonIterator, batches, withLabels = False):
+                self.bsonIterator = bsonIterator
+                self.batches = batches
+                self.withLabels = withLabels
+                
+                self.lock = threading.RLock()
+                self.index = 0
+                
+            def __next__(self):
+                with self.lock:
+                    if self.index >= len(self.batches):
+                        raise StopIteration()
+                    
+                    productIds, imageMetaIndices, imageBatchIndices = self.batches[self.index]
+                    self.index += 1
+                data = self.bsonIterator._GetBatchesOfTransformedSamples(\
+                    imageMetaIndices, withLabels = self.withLabels)
+                return productIds, imageBatchIndices, data
+        
+        with self.lock:
+            # Prepare batch indices
+            batches = []
+            groupedByProducts = list(self.imagesMetaDf.groupby("productId").indices.items())
             groupIndex = 0
             while groupIndex < len(groupedByProducts): 
                 # Make batch
@@ -162,12 +182,25 @@ class BSONIterator:
                     batchLen += len(ids)
                     groupIndex += 1
                     
-                # Get images
-                data = self._GetBatchesOfTransformedSamples(np.concatenate(imageMetaIndices), withLabels = False)        
-                
-                # Yield
-                yield productIds, imageBatchIndices, data
-                    
+                batches.append((productIds, np.concatenate(imageMetaIndices), imageBatchIndices))
+            
+        # Threaded data aquisition
+        generator = BatchesIterator(self, batches, withLabels = withLabels)
+        try:
+            # Prepare queue
+            enqueuer = GeneratorEnqueuer(generator)
+            enqueuer.start(workers = workers, max_queue_size = maxQueueSize)
+            outputGenerator = enqueuer.get()
+            
+            for r in outputGenerator:
+                yield r
+            
+        except StopIteration:
+            pass
+        finally:
+            if enqueuer is not None:
+                enqueuer.stop()
+            
     def _GetBatchesOfTransformedSamples(self, indexArray, withLabels = None):
         if withLabels is None:
             withLabels = self.withLabels

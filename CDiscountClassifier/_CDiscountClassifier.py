@@ -256,7 +256,7 @@ class CDiscountClassfier:
         imagesProcessed = 0
         totalPredictions = 0
         
-        for productIds, imageBatchIndices, XData in bsonIterator.GetGroupedBatches():
+        for productIds, imageBatchIndices, XData in bsonIterator.IterGroupedBatches():
             print("Predict %d/%d (%.2f %%) (batch %d)" % (imagesProcessed, \
                 bsonIterator.imagesMetaDf.shape[0],
                 100 * imagesProcessed / bsonIterator.imagesMetaDf.shape[0],
