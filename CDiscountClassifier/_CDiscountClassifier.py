@@ -12,7 +12,7 @@ from datetime import datetime
 from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
     TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint, \
-    CropImageDataGenerator
+    CropImageDataGenerator, SGDAccum
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
 import bson
 
@@ -181,6 +181,8 @@ class CDiscountClassfier:
             optimizer = keras.optimizers.SGD(**params["optimizer"]["kwargs"])
         elif params["optimizer"]["name"] == "RMSprop":
             optimizer = keras.optimizers.RMSprop(**params["optimizer"]["kwargs"])
+        elif params["optimizer"]["name"] == "SGDAccum":
+            optimizer = SGDAccum(**params["optimizer"]["kwargs"])
         else:
             raise NotImplementedError()
         
@@ -202,10 +204,10 @@ class CDiscountClassfier:
         stepsPerValidation = max(1, self.valMetaDf.shape[0] // self.batchSize)
 
         if params["trainImagesPerEpoch"] is not None:
-            stepsPerEpoch = self.params["trainImagesPerEpoch"] // self.batchSize
+            stepsPerEpoch = max(1, self.params["trainImagesPerEpoch"] // self.batchSize)
         
         if params["valImagesPerEpoch"] is not None:
-            stepsPerValidation = self.params["valImagesPerEpoch"] // self.batchSize
+            stepsPerValidation = max(1, self.params["valImagesPerEpoch"] // self.batchSize)
 
         print("stepsPerEpoch", stepsPerEpoch, stepsPerEpoch * self.batchSize)
         print("stepsPerValidation", stepsPerValidation, stepsPerValidation * self.batchSize)
