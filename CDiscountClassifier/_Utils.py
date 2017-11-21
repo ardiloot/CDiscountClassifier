@@ -9,7 +9,7 @@ import pandas as pd
 
 from os import path
 from keras import backend as K
-from keras.preprocessing.image import load_img, img_to_array
+from keras.preprocessing.image import load_img, img_to_array, ImageDataGenerator
 from keras.utils.data_utils import GeneratorEnqueuer
 
 #===============================================================================
@@ -59,17 +59,83 @@ def PrecalcDatasetMetadata(datasetName, datasetDir):
     outFile = path.join(datasetDir, "%s_metadata.csv" % (datasetName))
     df.to_csv(outFile)
     
-def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator, interpolation = "nearest"):
+def ExtractAndPreprocessImg(productDict, imgNr, interpolationSize, imageDataGenerator, interpolation = "nearest"):
     # Load image
     imgBytes = productDict["imgs"][imgNr]["picture"]
-    img = load_img(io.BytesIO(imgBytes), target_size = targetSize, interpolation = interpolation)
+    img = load_img(io.BytesIO(imgBytes), target_size = interpolationSize, interpolation = interpolation)
     
     # Transform and standardize
     x = img_to_array(img)
     x = imageDataGenerator.random_transform(x)
+    x = imageDataGenerator.Crop(x)
     x = imageDataGenerator.standardize(x)
     
     return x
+ 
+def SetEpochParams(model, curEpoch, epochSpecificParams):
+    if curEpoch in epochSpecificParams:
+        print("Update optimizer params:", epochSpecificParams[curEpoch])
+        oldLr = keras.backend.get_value(model.optimizer.lr)
+        
+        if "lr" in epochSpecificParams[curEpoch] and "lrDecayCoef" in epochSpecificParams[curEpoch]:
+            raise ValueError("Only one (lr or lrDecayCoef) can be specified")
+        
+        for k, v in epochSpecificParams[curEpoch].items():
+            if k == "lr":
+                keras.backend.set_value(model.optimizer.lr, v)
+            elif k == "lrDecayCoef":
+                curLr = keras.backend.get_value(model.optimizer.lr)
+                keras.backend.set_value(model.optimizer.lr, v * curLr)
+            else:
+                raise ValueError("Unknown param %s" % (k))
+        print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
+    
+#===============================================================================
+# CropImageDataGenerator
+#===============================================================================
+
+class CropImageDataGenerator(ImageDataGenerator):
+    
+    def __init__(self, *args, targetSize = None, cropMode = "center", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.targetSize = tuple(targetSize)
+        self.cropMode = cropMode
+        
+    def Crop(self, x, mode = None):
+        if mode is None:
+            mode = self.cropMode
+        
+        delta = np.array(x.shape)[:2] - np.array(self.targetSize)    
+        if mode == "center":
+            origin = (delta / 2).astype(int)
+        elif mode == "random":
+            origin = np.array([np.random.random_integers(0, delta[0]),\
+                               np.random.random_integers(0, delta[1])])
+        else:
+            raise ValueError("UnknownCropMode", mode)
+    
+        res = self._DoCrop(x, origin)
+        #print("crop", mode, x.shape, res.shape, origin)
+        return res
+        
+    def _DoCrop(self, x, origin):
+        if (self.targetSize[0] + origin[0]) > x.shape[0]:
+            raise ValueError("Invalid crop height", x.shape, origin, self.targetSize)  
+        
+        if (self.targetSize[1] + origin[1]) > x.shape[1]:
+            raise ValueError("Invalid crop width", x.shape, origin, self.targetSize)
+        
+        if min(origin) < 0:
+            raise ValueError("Invalid crop origin", x.shape, origin, self.targetSize)
+        
+        res = x[origin[0]:origin[0] + self.targetSize[0],\
+                origin[1]:origin[1] + self.targetSize[1],\
+                :]
+        return res
+        
+    @property
+    def imageShape(self):
+        return self.targetSize + (3,)
     
 #===============================================================================
 # BSONIterator
@@ -77,7 +143,7 @@ def ExtractAndPreprocessImg(productDict, imgNr, targetSize, imageDataGenerator, 
 
 class BSONIterator:
     def __init__(self, bsonFile, productsMetaDf, imagesMetaDf, numClasses, imageDataGenerator,
-                 targetSize = None, withLabels = True, batchSize = None, 
+                 interpolationSize = None, withLabels = True, batchSize = None, 
                  shuffle = True, seed = None, interpolation = "nearest", lock = None):
 
         self.bsonFile = bsonFile
@@ -85,7 +151,7 @@ class BSONIterator:
         self.imagesMetaDf = imagesMetaDf
         self.numClasses = numClasses
         self.imageDataGenerator = imageDataGenerator
-        self.targetSize = tuple(targetSize)
+        self.interpolationSize = tuple(interpolationSize)
         
         self.withLabels = withLabels
         self.batchSize = batchSize
@@ -98,7 +164,6 @@ class BSONIterator:
             self.lock = threading.RLock()
 
         self.file = open(self.bsonFile, "rb")
-        self.imageShape = self.targetSize + (3,)
         self.samples = self.imagesMetaDf.shape[0]
         self.nextIndex = 0
         self.totalBatchesSeen = 0
@@ -205,7 +270,7 @@ class BSONIterator:
         if withLabels is None:
             withLabels = self.withLabels
             
-        XBatch = np.zeros((len(indexArray),) + self.imageShape, dtype = K.floatx())
+        XBatch = np.zeros((len(indexArray),) + self.imageDataGenerator.imageShape, dtype = K.floatx())
         if withLabels:
             yBatch = np.zeros((len(indexArray), self.numClasses), dtype = K.floatx())
 
@@ -242,28 +307,10 @@ class BSONIterator:
         
         # Extract and preprocess image
         productDict = bson.BSON.decode(productDictBytes)
-        x = ExtractAndPreprocessImg(productDict, imgNr, self.targetSize, \
+        x = ExtractAndPreprocessImg(productDict, imgNr, self.interpolationSize, \
                                     self.imageDataGenerator, interpolation = self.interpolation)
         
         return x, classId
-
-def SetEpochParams(model, curEpoch, epochSpecificParams):
-    if curEpoch in epochSpecificParams:
-        print("Update optimizer params:", epochSpecificParams[curEpoch])
-        oldLr = keras.backend.get_value(model.optimizer.lr)
-        
-        if "lr" in epochSpecificParams[curEpoch] and "lrDecayCoef" in epochSpecificParams[curEpoch]:
-            raise ValueError("Only one (lr or lrDecayCoef) can be specified")
-        
-        for k, v in epochSpecificParams[curEpoch].items():
-            if k == "lr":
-                keras.backend.set_value(model.optimizer.lr, v)
-            elif k == "lrDecayCoef":
-                curLr = keras.backend.get_value(model.optimizer.lr)
-                keras.backend.set_value(model.optimizer.lr, v * curLr)
-            else:
-                raise ValueError("Unknown param %s" % (k))
-        print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
 
 #==============================================================================
 # TrainTimeStatsCallback

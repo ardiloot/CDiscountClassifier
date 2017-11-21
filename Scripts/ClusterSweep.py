@@ -9,7 +9,7 @@ from os import path
 HPC_SCRIPT_TEMPLATE = \
 r"""#!/bin/bash
 #SBATCH --partition=gpu
-#SBATCH --gres={gpus}
+#SBATCH --gres=gpu:tesla:{gpus}
 #SBATCH -J {jobName}
 
 #SBATCH --nodes=1
@@ -60,30 +60,36 @@ if __name__ == "__main__":
     params = {
         "datasetDir": None,
         "trainDatasetName": "train",
-        "targetSize": (180, 180),
+        "interpolationSize": (180, 180),
+        "targetSize": (161, 161),
         "batchSize": 450,
-        "epochs": 10,
-        "valImagesPerEpoch": 10000,
-        "trainImagesPerEpoch": 2000000,
-        "predictMethod": "meanActivations",
+        "epochs": 3, #100,
+        "valImagesPerEpoch": 2000,#10000,
+        "trainImagesPerEpoch": 2000,#2000000,
+        "predictMethod": "productActivations",
         "testDropout": 0.0,
+        #"trainAugmentation": {
+        #    "zoom_range": 0.1, 
+        #    "width_shift_range": 0.1, 
+        #    "height_shift_range": 0.1, 
+        #    "horizontal_flip": True
+        #    },
         "trainAugmentation": {
-            "zoom_range": 0.1, 
-            "width_shift_range": 0.1, 
-            "height_shift_range": 0.1, 
-            "horizontal_flip": True
+            "cropMode": "center",
             },
         "valTrainSplit": {
-            "splitPercentage": 0.2,
+            "splitPercentage": 0.1,
             "dropoutPercentage": 0.0,
             "seed": 0
             },
         "model": {
             "name": "Xception",
             "kwargs": {
-                "trainable": "blocks", 
+                #"trainable": "full", 
                 "trainableFromBlock": 10,
-                "weights": "20171118-162839_Xception_trainAugmentation_nr_0/model.11-0.64.hdf5"
+                #"weights": "20171119-194946_Xception_model_kwargs_gpus_2/model.02-0.56.hdf5",
+                #"weights": "20171120-003745_Xception_batchSize_900/model.12-0.67.hdf5",
+                "gpus": 1,
                 },
             "trainMode": "continue",  
             },
@@ -92,9 +98,16 @@ if __name__ == "__main__":
             "kwargs": {"lr": 5e-3}
             },
         "epochSpecificParams":{
-            4: {"lrDecayCoef": 0.1},
-            8: {"lrDecayCoef": 0.1},
-            12: {"lrDecayCoef": 0.1},
+            4: {"lrDecayCoef": 0.5},
+            6: {"lrDecayCoef": 0.5},
+            8: {"lrDecayCoef": 0.5},
+            10: {"lrDecayCoef": 0.5},
+            12: {"lrDecayCoef": 0.5},
+            14: {"lrDecayCoef": 0.5},
+            16: {"lrDecayCoef": 0.5},
+            18: {"lrDecayCoef": 0.5},
+            20: {"lrDecayCoef": 0.5},
+            22: {"lrDecayCoef": 0.5},
             }
         }
     
@@ -102,14 +115,13 @@ if __name__ == "__main__":
     resources = {
        "nodes": 1,
        "cpusPerTask": 5,
-       "mem": "32G",
-       "walltime": "0-07:00:00",
-       "gpus": "gpu:tesla:1"
+       "mem": "20G",
+       "walltime": "3-00:00:00",
     }
     
     # Sweep params
-    sweepParam = ("batchSize", )
-    sweepValues = [450]
+    sweepParam = ("trainAugmentation", "cropMode")
+    sweepValues = ["random"]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)
@@ -137,9 +149,11 @@ if __name__ == "__main__":
             
         # Write slurm script
         slurmFile = path.join(clusterSaveDir, "%s.sh" % (filename))
+        gpus = newParams["model"]["kwargs"]["gpus"] if "gpus" in params["model"]["kwargs"] else 1
         cmd = "python TrainModel.py \"%s\"" % (path.abspath(paramsFile))
         slurmScript = HPC_SCRIPT_TEMPLATE.format(jobName = friendlyName,
                                                  cmd = cmd,
+                                                 gpus = gpus,
                                                  **resources)
         
         with open(slurmFile, "w") as fout:

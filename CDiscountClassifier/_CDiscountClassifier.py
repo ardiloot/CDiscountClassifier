@@ -8,11 +8,11 @@ import keras.backend as K
 from os import path
 from scipy import stats
 from datetime import datetime
-from keras.preprocessing.image import ImageDataGenerator
 
 from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
-    TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint
+    TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint, \
+    CropImageDataGenerator
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
 
 #===============================================================================
@@ -29,6 +29,7 @@ class CDiscountClassfier:
             "resultsDir": "../../results",
             "trainDatasetName": None,
             "testDatasetName": "test",
+            "interpolationSize": (180, 180),
             "targetSize": (180, 180),
             "batchSize": 64,
             "epochs": 5,
@@ -36,6 +37,8 @@ class CDiscountClassfier:
             "valImagesPerEpoch": None,
             "trainImagesPerEpoch": None,
             "trainAugmentation": {},
+            "valAugmentation": {},
+            "testAugmentation": {},
             "predictMethod": "meanActivations",
             "testDropout": 0.0,
             }
@@ -92,19 +95,20 @@ class CDiscountClassfier:
         # Image data generators 
         print("Init iterators...")
         preproccesingFunc = _Models.PREPROCESS_FUNCS[self.params["model"]["name"]]
-        trainImageDataGenerator = ImageDataGenerator(\
+        trainImageDataGenerator = CropImageDataGenerator(targetSize = self.targetSize,
             preprocessing_function = preproccesingFunc, **self.params["trainAugmentation"])
-        valImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+        valImageDataGenerator = CropImageDataGenerator(targetSize = self.targetSize, \
+            preprocessing_function = preproccesingFunc, **self.params["valAugmentation"])
 
         # Iterators
         bsonFile = path.join(self.datasetDir, "%s.bson" % (self.trainDatasetName))
         
         self.trainGenerator = BSONIterator(bsonFile, self.trainProductsMetaDf, self.trainMetaDf, \
-            self.nClasses, trainImageDataGenerator, targetSize = self.targetSize, \
+            self.nClasses, trainImageDataGenerator, interpolationSize = self.interpolationSize, \
             withLabels = True, batchSize = self.batchSize, shuffle = True)
 
         self.valGenerator = BSONIterator(bsonFile, self.trainProductsMetaDf, self.valMetaDf, \
-            self.nClasses, valImageDataGenerator, targetSize = self.targetSize, \
+            self.nClasses, valImageDataGenerator, interpolationSize = self.interpolationSize, \
             withLabels = True, batchSize = self.batchSize, shuffle = True, lock = self.trainGenerator.lock)
         
         print("Init iterators done.")
@@ -119,10 +123,12 @@ class CDiscountClassfier:
         print("Init iterators...")
         bsonFile = path.join(self.datasetDir, "%s.bson" % (self.testDatasetName))
         preproccesingFunc = _Models.PREPROCESS_FUNCS[self.params["model"]["name"]]
-        testImageDataGenerator = ImageDataGenerator(preprocessing_function = preproccesingFunc)
+        
+        testImageDataGenerator = CropImageDataGenerator(targetSize = self.targetSize, \
+            preprocessing_function = preproccesingFunc, **self.params["testAugmentation"])
         
         self.testGenerator = BSONIterator(bsonFile, self.testProductsMetaDf, self.testMetaDf, \
-            self.nClasses, testImageDataGenerator, targetSize = self.targetSize, \
+            self.nClasses, testImageDataGenerator, interpolationSize = self.interpolationSize, \
             withLabels = False, batchSize = self.batchSize, shuffle = False)
         print("Init iterators done.")
         print("Init test data done.")
@@ -335,7 +341,7 @@ class CDiscountClassfier:
         
         return productsMetaDf
         
-    def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.2, dropoutPercentage = 0.0, seed = 0):
+    def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.1, dropoutPercentage = 0.0, seed = 0):
         np.random.seed(seed)
         indicesByGroups = productsMetaDf.groupby("categoryId", sort = False).indices
         numImgsColumnNr = productsMetaDf.columns.get_loc("numImgs")
@@ -387,6 +393,10 @@ class CDiscountClassfier:
     @property
     def targetSize(self):
         return self.params["targetSize"]
+
+    @property
+    def interpolationSize(self):
+        return self.params["interpolationSize"]
 
     @property
     def batchSize(self):

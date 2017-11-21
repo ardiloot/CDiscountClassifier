@@ -37,13 +37,14 @@ if __name__ == "__main__":
     params = {
         "datasetDir": None,
         "trainDatasetName": "train",
-        #"resultsDir": r"C:\Users\Ardi\Downloads\results",
-        "resultsDir": r"../../results",
-        "targetSize": (180, 180),
+        "resultsDir": r"C:\Users\Ardi\Downloads\results",
+        "interpolationSize": (180, 180),
+        "targetSize": (161, 161),
         "batchSize": 32,
         "epochs": 3,
         "trainImagesPerEpoch": 100,
         "valImagesPerEpoch": 50,
+        "predictMethod": "productActivations",
         "testDropout": 0.9999,
         "valTrainSplit": {
             "splitPercentage": 0.2,
@@ -51,17 +52,19 @@ if __name__ == "__main__":
             "seed": 0
             },
         "trainAugmentation": {
-            "zoom_range": 0.1,
-            "width_shift_range": 0.1,
-            "height_shift_range": 0.1,
-            "horizontal_flip": True,
+            #"zoom_range": 0.1,
+            #"width_shift_range": 0.1,
+            #"height_shift_range": 0.1,
+            #"horizontal_flip": True,
+            "cropMode": "random",
             },
         "model": {
             "name": "Xception",
             "kwargs": {
                 "trainable": "blocks",
                 "trainableFromBlock": 10,
-                "weights": "20171118-162839_Xception_trainAugmentation_nr_0/model.11-0.64.hdf5"
+                #"weights": "20171118-162839_Xception_trainAugmentation_nr_0/model.11-0.64.hdf5"
+                #"weights": "20171120-003745_Xception_batchSize_900/model.12-0.67.hdf5",
                 },
             "trainMode": "continue",  
             },
@@ -83,21 +86,11 @@ if __name__ == "__main__":
             params = yaml.safe_load(fin)
     
     print("Init classifier...")
-    sys.stdout.flush()
     m = CDiscountClassfier(**params)
-    print("Init classifier done.")
-    print("InitTrainingData...")
-    sys.stdout.flush()
     m.InitTrainingData()
-    print("InitTrainingData done.")
-    sys.stdout.flush()
-    
     m.GenerateTrainingName()
     print("Init tee...")
-    sys.stdout.flush()
     tee = Tee(m.logFilename, "w")
-    print("Init tee done.")
-    sys.stdout.flush()
     
     m.TrainModel(updateTrainingName = False)
     
@@ -114,5 +107,7 @@ if __name__ == "__main__":
     profile.disable()
     pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
     
-    
+    print("TrainModel done.")
     del tee
+    print("TrainModel done.")
+    
