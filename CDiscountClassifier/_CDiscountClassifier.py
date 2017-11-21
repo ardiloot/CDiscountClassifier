@@ -1,4 +1,5 @@
 import os
+import bson
 import numpy as np
 import pandas as pd
 import keras
@@ -6,7 +7,6 @@ import yaml
 import keras.backend as K
 
 from os import path
-from scipy import stats
 from datetime import datetime
 
 from CDiscountClassifier import _Models
@@ -14,6 +14,7 @@ from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
     TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint, \
     CropImageDataGenerator
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
+import bson
 
 #===============================================================================
 # CDiscountClassfier
@@ -240,15 +241,14 @@ class CDiscountClassfier:
         self.model = model
         print("Model fit done.")
                 
-    def Predict(self, bsonIterator, evaluate = False):
+    def Predict(self, bsonIterator, evaluate = False, topK = 0):
         print("Predict")
         
         predictMethods = {
-            "meanActivations": lambda x: np.argmax(np.mean(x, axis = 0, keepdims = True), axis = 1)[0],
-            "productActivations": lambda x: np.argmax(np.prod(x, axis = 0, keepdims = True), axis = 1)[0],
-            "rmsActivations": lambda x: np.argmax(np.mean(x ** 2.0, axis = 0, keepdims = True), axis = 1)[0],
-            "firstImage": lambda x: np.argmax(x, axis = 1)[0],
-            "topCategory": lambda x: stats.mode(np.argmax(x, axis = 1))[0][0],
+            "meanActivations": lambda x: np.mean(x, axis = 0),
+            "productActivations": lambda x: np.prod(x, axis = 0),
+            "rmsActivations": lambda x: np.mean(x ** 2.0, axis = 0),
+            "firstImage": lambda x: x[0, :],
             }
         
         finalPredictMethod = self.params["predictMethod"]
@@ -258,6 +258,7 @@ class CDiscountClassfier:
         GetActivations = lambda x: K.function([K.learning_phase()] + self.model.inputs, self.model.outputs)([0, x])[0]
        
         res = []
+        resTopK = []
         correctPredictions = dict((k, 0) for k in predictMethods)
         imagesProcessed = 0
         totalPredictions = 0
@@ -277,7 +278,8 @@ class CDiscountClassfier:
                     trueCategory = bsonIterator.productsMetaDf.loc[productId, "categoryId"]
                         
                 for predictMethodName, predictFunc in predictMethods.items():
-                    predictedClass = predictFunc(activations[ids, :])
+                    productActivations = predictFunc(activations[ids, :])
+                    predictedClass = np.argmax(productActivations, axis = 0)
                     predictedCategory = self._mapClassToCategory[predictedClass]
                     
                     if evaluate:
@@ -285,8 +287,16 @@ class CDiscountClassfier:
                             correctPredictions[predictMethodName] += 1
                     
                     if predictMethodName == finalPredictMethod:    
+                        # Add to res
                         res.append([productId, predictedCategory])
                         
+                        # Save top categories to bson
+                        if topK > 0:
+                            bestClasses = productActivations.argsort()[-topK:][::-1]
+                            bestClassProbs = productActivations[bestClasses]
+                            bestCategories = np.vectorize(lambda x: self._mapClassToCategory[x])(bestClasses)
+                            resTopK.append([productId] + list(bestCategories) + list(bestClassProbs))
+                            
                 totalPredictions += 1
                 
             # Print evaluation
@@ -298,18 +308,30 @@ class CDiscountClassfier:
             imagesProcessed += XData.shape[0]
         print("Predict done.")
         
+        # ResDf
         resDf = pd.DataFrame(res, columns = ["_id", "category_id"])
         resDf.set_index("_id", inplace = True)
-        return resDf
+        
+        # resTopKDf
+        if topK > 0:
+            resTopKDf = pd.DataFrame(resTopK, columns = ["_id"] + \
+                ["pred_%d" % (i) for i in range(topK)] + ["prob_%d" % (i) for i in range(topK)])
+            resTopKDf.set_index("_id", inplace = True)
+        else:
+            resTopKDf = None
+            
+        return resDf, resTopKDf
     
     def ValidateModel(self):
-        df = self.Predict(self.valGenerator, evaluate = True)
+        df, topKDf = self.Predict(self.valGenerator, evaluate = True, topK = 5)
         df.to_csv(self.validationFilename + ".gz", compression = "gzip")
+        topKDf.to_csv(self.validationTopKFilename + ".gz", compression = "gzip")
         
     def PrepareSubmission(self):
         print("PrepareSubmission...")
-        df = self.Predict(self.testGenerator, evaluate = False)
+        df, topKDf = self.Predict(self.testGenerator, evaluate = False, topK = 5)
         df.to_csv(self.submissionFilename + ".gz", compression = "gzip")
+        topKDf.to_csv(self.submissionTopKFilename + ".gz", compression = "gzip")
         print("PrepareSubmission done.")
            
     def _ReadCategoryTree(self):
@@ -438,6 +460,13 @@ class CDiscountClassfier:
     def validationFilename(self):
         return path.join(self.trainingDir, "validation.csv")
 
+    @property
+    def submissionTopKFilename(self):
+        return path.join(self.trainingDir, "submissionTopK.csv")
+    
+    @property
+    def validationTopKFilename(self):
+        return path.join(self.trainingDir, "validationTopK.csv")
 
 
 if __name__ == "__main__":
