@@ -111,7 +111,7 @@ class CropImageDataGenerator(ImageDataGenerator):
             origin = (delta / 2).astype(int)
         elif mode == "random":
             origin = np.array([np.random.random_integers(0, delta[0]),\
-                               np.random.random_integers(0, delta[1])])
+                               np.random.random_integers(0, delta[1])], dtype = int)
         else:
             raise ValueError("UnknownCropMode", mode)
     
@@ -129,8 +129,8 @@ class CropImageDataGenerator(ImageDataGenerator):
         if min(origin) < 0:
             raise ValueError("Invalid crop origin", x.shape, origin, self.targetSize)
         
-        res = x[origin[0]:origin[0] + self.targetSize[0],\
-                origin[1]:origin[1] + self.targetSize[1],\
+        res = x[origin[0]:(origin[0] + self.targetSize[0]),\
+                origin[1]:(origin[1] + self.targetSize[1]),\
                 :]
         return res
         
