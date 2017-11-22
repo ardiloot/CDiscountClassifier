@@ -7,6 +7,10 @@ from keras.layers import Dense, GlobalAveragePooling2D
 from keras.applications import resnet50, xception
 from keras.utils import multi_gpu_model
 
+#===============================================================================
+# Helper functions
+#===============================================================================
+
 def _SetLayerTrainable(model, pattern, trainable):
     for layer in model.layers:
             if fnmatch(layer.name, pattern):
@@ -40,17 +44,12 @@ def GetModel(imageShape, nClasses, name = None, weights = None, \
     
     return model
 
-def MyXception(imageShape, nClasses, trainable = "onlyTop"):
-    modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
-                                  weights = "imagenet")
-    
-    # Add top
-    x = modelBase.outputs[0]
-    x = GlobalAveragePooling2D(name = "avg_pool")(x)
-    x = Dense(nClasses, activation = "softmax", name = 'predictions')(x)
-  
-    model = Model(modelBase.inputs, x, name='xception')
-   
+#===============================================================================
+# Xception
+#===============================================================================
+
+def SetTrainableXception(model, trainable):
+    print("SetTrainableXception", trainable)
     # Freeze model
     _SetLayerTrainable(model, "*", False)
     
@@ -65,7 +64,23 @@ def MyXception(imageShape, nClasses, trainable = "onlyTop"):
         _SetLayerTrainable(model, "predictions", True)
     else:
         raise ValueError("Unknown trainable mode %s" % (trainable))
+
+def MyXception(imageShape, nClasses, trainable = "onlyTop"):
+    # Load pretrained model
+    modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
+        weights = "imagenet")
     
+    # Add top
+    x = modelBase.outputs[0]
+    x = GlobalAveragePooling2D(name = "avg_pool")(x)
+    x = Dense(nClasses, activation = "softmax", name = 'predictions')(x)
+    model = Model(modelBase.inputs, x, name = "xception")
+    
+    # Add method to instance (not very good idea)
+    model.SetTrainable = SetTrainableXception.__get__(model, type(model))
+    
+    # Set trainable mode 
+    model.SetTrainable(trainable)  
     return model
 
 PREPROCESS_FUNCS = {"Xception": xception.preprocess_input}

@@ -39,15 +39,15 @@ if __name__ == "__main__":
         "trainDatasetName": "train",
         "resultsDir": r"C:\Users\Ardi\Downloads\results",
         "interpolationSize": (180, 180),
-        "targetSize": (161, 161),
+        "targetSize": (160, 160),
         "batchSize": 32,
-        "epochs": 3,
-        "trainImagesPerEpoch": 100,
+        "epochs": 5,
+        "trainImagesPerEpoch": 640,
         "valImagesPerEpoch": 50,
         "predictMethod": "productActivations",
         "testDropout": 0.9999,
         "valTrainSplit": {
-            "splitPercentage": 0.2,
+            "splitPercentage": 0.1,
             "dropoutPercentage": 0.9999,
             "seed": 0
             },
@@ -61,19 +61,21 @@ if __name__ == "__main__":
         "model": {
             "name": "Xception",
             "kwargs": {
-                "trainable": "blocks",
-                "trainableFromBlock": 10,
+                "trainable": "onlyTop",
                 #"weights": "20171118-162839_Xception_trainAugmentation_nr_0/model.11-0.64.hdf5"
                 #"weights": "20171120-003745_Xception_batchSize_900/model.12-0.67.hdf5",
                 },
             "trainMode": "continue",  
             },
         "optimizer": {
-            "name": "Adam",
-            "kwargs": {}
+            "name": "SGD",
+            "kwargs": {
+                "lr": 0.005,
+                "momentum": 0.9,
+                },
             },
         "epochSpecificParams":{
-            2: {"lrDecayCoef": 0.1},
+            2: {"lrDecayCoef": 0.1, "trainable": "blocks10+"},
             4: {"lrDecayCoef": 0.1},
             6: {"lrDecayCoef": 0.1},
             }
@@ -110,4 +112,6 @@ if __name__ == "__main__":
     print("TrainModel done.")
     del tee
     print("TrainModel done.")
+    
+    sys.exit()
     

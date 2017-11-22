@@ -74,21 +74,40 @@ def ExtractAndPreprocessImg(productDict, imgNr, interpolationSize, imageDataGene
     return x
  
 def SetEpochParams(model, curEpoch, epochSpecificParams):
-    if curEpoch in epochSpecificParams:
-        print("Update optimizer params:", epochSpecificParams[curEpoch])
-        oldLr = keras.backend.get_value(model.optimizer.lr)
+    if curEpoch not in epochSpecificParams:
+        return
+    
+    # Init
+    params = epochSpecificParams[curEpoch]
+    print("Update epoch specific params:", params)
+    oldLr = keras.backend.get_value(model.optimizer.lr)
+    
+    if hasattr(model, "modelCPU"):
+        realModel = model.modelCPU
+    else:
+        realModel = model
+    
+    # Update
+    for k, v in params.items():
+        if k == "lrDecayCoef":
+            curLr = keras.backend.get_value(model.optimizer.lr)
+            keras.backend.set_value(model.optimizer.lr, v * curLr)
+        elif k == "trainable":
+            realModel.SetTrainable(v)
+        else:
+            raise ValueError("Unknown param %s" % (k))
         
-        if "lr" in epochSpecificParams[curEpoch] and "lrDecayCoef" in epochSpecificParams[curEpoch]:
-            raise ValueError("Only one (lr or lrDecayCoef) can be specified")
+    # Print confirmations        
+    if "trainable" in params:
+        print("Need to recompile")
+        model.compile(metrics = ["accuracy"],
+            loss = "categorical_crossentropy",
+            optimizer = model.optimizer)
         
-        for k, v in epochSpecificParams[curEpoch].items():
-            if k == "lr":
-                keras.backend.set_value(model.optimizer.lr, v)
-            elif k == "lrDecayCoef":
-                curLr = keras.backend.get_value(model.optimizer.lr)
-                keras.backend.set_value(model.optimizer.lr, v * curLr)
-            else:
-                raise ValueError("Unknown param %s" % (k))
+        model.summary()
+        print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
+        
+    if "lrDecayCoef" in params:
         print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
     
 #===============================================================================

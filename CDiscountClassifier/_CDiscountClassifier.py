@@ -228,8 +228,9 @@ class CDiscountClassfier:
         for curEpoch in range(startEpoch, totalEpocs):
             # Set learning rate
             SetEpochParams(model, curEpoch, epochSpecificParams)
-            
             print ("Start training for epoch %d/%d" % (curEpoch, totalEpocs))
+            print("Optimizer params", model.optimizer.get_config())
+            
             model.fit_generator(self.trainGenerator,
                 steps_per_epoch = stepsPerEpoch,
                 validation_data = self.valGenerator,
