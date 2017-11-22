@@ -40,8 +40,7 @@ def GetModel(imageShape, nClasses, name = None, weights = None, \
     
     return model
 
-def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock = None):
-    
+def MyXception(imageShape, nClasses, trainable = "onlyTop"):
     modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
                                   weights = "imagenet")
     
@@ -60,8 +59,8 @@ def MyXception(imageShape, nClasses, trainable = "onlyTop", trainableFromBlock =
         _SetLayerTrainable(model, "predictions", True)
     elif trainable == "full":
         _SetLayerTrainable(model, "*", True)
-    elif trainable == "blocks":
-        for i in range(trainableFromBlock, 15):
+    elif trainable == "blocks10+":
+        for i in range(10, 15):
             _SetLayerTrainable(model, "block%d_*" % (i), True)
         _SetLayerTrainable(model, "predictions", True)
     else:
