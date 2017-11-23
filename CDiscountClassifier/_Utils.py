@@ -100,9 +100,12 @@ def SetEpochParams(model, curEpoch, epochSpecificParams):
     # Print confirmations        
     if "trainable" in params:
         print("Need to recompile")
+        oldOptimizerClass = model.optimizer.__class__
+        oldOptimizerParams = model.optimizer.get_config()
+        newOptimizer = oldOptimizerClass(**oldOptimizerParams)
         model.compile(metrics = ["accuracy"],
             loss = "categorical_crossentropy",
-            optimizer = model.optimizer)
+            optimizer = newOptimizer)
         
         model.summary()
         print("LR", oldLr, "->", keras.backend.get_value(model.optimizer.lr))
