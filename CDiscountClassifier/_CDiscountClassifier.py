@@ -1,5 +1,4 @@
 import os
-import bson
 import numpy as np
 import pandas as pd
 import keras
@@ -12,9 +11,8 @@ from datetime import datetime
 from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
     TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint, \
-    CropImageDataGenerator, SGDAccum
+    CropImageDataGenerator, SGDAccum, AdamAccum
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
-import bson
 
 #===============================================================================
 # CDiscountClassfier
@@ -183,6 +181,8 @@ class CDiscountClassfier:
             optimizer = keras.optimizers.RMSprop(**params["optimizer"]["kwargs"])
         elif params["optimizer"]["name"] == "SGDAccum":
             optimizer = SGDAccum(**params["optimizer"]["kwargs"])
+        elif params["optimizer"]["name"] == "AdamAccum":
+            optimizer =  AdamAccum(**params["optimizer"]["kwargs"])
         else:
             raise NotImplementedError()
         

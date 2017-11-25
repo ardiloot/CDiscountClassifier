@@ -468,7 +468,75 @@ class SGDAccum(keras.optimizers.Optimizer):
                   'accum_iters': int(K.get_value(self.accum_iters))}
         base_config = super(SGDAccum, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-        
+
+#===============================================================================
+# AdamAccum
+#===============================================================================
+
+class AdamAccum(keras.optimizers.Optimizer):
+    def __init__(self, lr = 0.001, beta_1 = 0.9, beta_2 = 0.999,
+                 epsilon = 1e-8, decay = 0., accum_iters = 1, **kwargs):
+        super().__init__(**kwargs)
+        with K.name_scope(self.__class__.__name__):
+            self.iterations = K.variable(0, name = 'iterations')
+            self.lr = K.variable(lr, name = 'lr')
+            self.beta_1 = K.variable(beta_1, name = 'beta_1')
+            self.beta_2 = K.variable(beta_2, name = 'beta_2')
+            self.decay = K.variable(decay, name = 'decay')
+            self.accum_iters = K.variable(accum_iters, name='accum_iters')
+        self.epsilon = epsilon
+        self.initial_decay = decay
+
+    @interfaces.legacy_get_updates_support
+    def get_updates(self, loss, params):
+        grads = self.get_gradients(loss, params)
+        self.updates = [K.update_add(self.iterations, 1)]
+
+        lr = self.lr
+        if self.initial_decay > 0:
+            lr *= (1. / (1. + self.decay * K.cast(self.iterations,
+                                                  K.dtype(self.decay))))
+
+        t = (K.cast(self.iterations, K.floatx()) + 1) / self.accum_iters
+        accum_switch = K.equal(self.iterations % self.accum_iters, 0)
+        accum_switch = K.cast(accum_switch, dtype = 'float32')
+        lr_t = lr * (K.sqrt(1. - K.pow(self.beta_2, t)) / 
+                     (1. - K.pow(self.beta_1, t)))
+
+        ms = [K.zeros(K.int_shape(p), dtype = K.dtype(p)) for p in params]
+        vs = [K.zeros(K.int_shape(p), dtype = K.dtype(p)) for p in params]
+        gs = [K.zeros(K.int_shape(p), dtype = K.dtype(p)) for p in params]
+        self.weights = [self.iterations] + ms + vs
+
+        for p, gp, m, v, ga in zip(params, grads, ms, vs, gs):
+            g = (ga + gp) / self.accum_iters
+            m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
+            v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g)
+            p_t = p - lr_t * m_t / (K.sqrt(v_t) + self.epsilon)
+
+            self.updates.append(K.update(m, (1 - accum_switch) * m + accum_switch * m_t))
+            self.updates.append(K.update(v, (1 - accum_switch) * v + accum_switch * v_t))
+            self.updates.append(K.update(ga, (1 - accum_switch) * (ga + gp)))
+            new_p = p_t
+
+            # Apply constraints.
+            if getattr(p, 'constraint', None) is not None:
+                new_p = p.constraint(new_p)
+                
+            self.updates.append(K.update(p, (1 - accum_switch) * p + accum_switch * new_p))
+        return self.updates
+
+    def get_config(self):
+        config = {'lr': float(K.get_value(self.lr)),
+                  'beta_1': float(K.get_value(self.beta_1)),
+                  'beta_2': float(K.get_value(self.beta_2)),
+                  'decay': float(K.get_value(self.decay)),
+                  'epsilon': self.epsilon,
+                  'accum_iters': int(K.get_value(self.accum_iters))}
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    
 if __name__ == "__main__":
     pass
         
