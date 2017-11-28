@@ -29,9 +29,11 @@ class CDiscountClassfier:
             "trainDatasetName": None,
             "testDatasetName": "test",
             "interpolationSize": (180, 180),
+            "interpolation": "nearest",
             "targetSize": (180, 180),
             "batchSize": 64,
             "epochs": 5,
+            "workers": 5,
             "trainSeed": 1000003,
             "valImagesPerEpoch": None,
             "trainImagesPerEpoch": None,
@@ -104,11 +106,12 @@ class CDiscountClassfier:
         
         self.trainGenerator = BSONIterator(bsonFile, self.trainProductsMetaDf, self.trainMetaDf, \
             self.nClasses, trainImageDataGenerator, interpolationSize = self.interpolationSize, \
-            withLabels = True, batchSize = self.batchSize, shuffle = True)
+            withLabels = True, batchSize = self.batchSize, shuffle = True, interpolation = self.params["interpolation"])
 
         self.valGenerator = BSONIterator(bsonFile, self.trainProductsMetaDf, self.valMetaDf, \
             self.nClasses, valImageDataGenerator, interpolationSize = self.interpolationSize, \
-            withLabels = True, batchSize = self.batchSize, shuffle = True, lock = self.trainGenerator.lock)
+            withLabels = True, batchSize = self.batchSize, shuffle = True, lock = self.trainGenerator.lock, \
+            interpolation = self.params["interpolation"])
         
         print("Init iterators done.")
    
@@ -128,7 +131,7 @@ class CDiscountClassfier:
         
         self.testGenerator = BSONIterator(bsonFile, self.testProductsMetaDf, self.testMetaDf, \
             self.nClasses, testImageDataGenerator, interpolationSize = self.interpolationSize, \
-            withLabels = False, batchSize = self.batchSize, shuffle = False)
+            withLabels = False, batchSize = self.batchSize, shuffle = False, interpolation = self.params["interpolation"])
         print("Init iterators done.")
         print("Init test data done.")
                 
@@ -182,7 +185,7 @@ class CDiscountClassfier:
         elif params["optimizer"]["name"] == "SGDAccum":
             optimizer = SGDAccum(**params["optimizer"]["kwargs"])
         elif params["optimizer"]["name"] == "AdamAccum":
-            optimizer =  AdamAccum(**params["optimizer"]["kwargs"])
+            optimizer = AdamAccum(**params["optimizer"]["kwargs"])
         else:
             raise NotImplementedError()
         
@@ -237,7 +240,7 @@ class CDiscountClassfier:
                 validation_steps = stepsPerValidation,
                 callbacks = callbacks,
                 epochs = curEpoch + 1,
-                workers = 5,
+                workers = self.params["workers"],
                 initial_epoch = curEpoch)
             print("Fit generator done.")
             
@@ -266,7 +269,7 @@ class CDiscountClassfier:
         imagesProcessed = 0
         totalPredictions = 0
         
-        for productIds, imageBatchIndices, XData in bsonIterator.IterGroupedBatches():
+        for productIds, imageBatchIndices, XData in bsonIterator.IterGroupedBatches(workers = self.params["workers"]):
             print("Predict %d/%d (%.2f %%) (batch %d)" % (imagesProcessed, \
                 bsonIterator.imagesMetaDf.shape[0],
                 100 * imagesProcessed / bsonIterator.imagesMetaDf.shape[0],
