@@ -6,6 +6,7 @@ import keras
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 from os import path
 from keras import backend as K
@@ -216,7 +217,8 @@ class BSONIterator:
             self.nextIndex += self.batchSize
             self.totalBatchesSeen += 1
             
-        return self._GetBatchesOfTransformedSamples(indices)
+        res = self._GetBatchesOfTransformedSamples(indices)
+        return res
  
     def IterBatches(self):
         with self.lock:
@@ -478,28 +480,31 @@ class AdamAccum(keras.optimizers.Optimizer):
                  epsilon = 1e-8, decay = 0., accum_iters = 1, **kwargs):
         super().__init__(**kwargs)
         with K.name_scope(self.__class__.__name__):
-            self.iterations = K.variable(0, name = 'iterations')
+            self.iterations = K.variable(0, dtype = 'int64', name = 'iterations')
             self.lr = K.variable(lr, name = 'lr')
             self.beta_1 = K.variable(beta_1, name = 'beta_1')
             self.beta_2 = K.variable(beta_2, name = 'beta_2')
             self.decay = K.variable(decay, name = 'decay')
-            self.accum_iters = K.variable(accum_iters, name='accum_iters')
+            self.accum_iters = K.variable(accum_iters, dtype = 'int64', name='accum_iters')
         self.epsilon = epsilon
         self.initial_decay = decay
 
     @interfaces.legacy_get_updates_support
     def get_updates(self, loss, params):
         grads = self.get_gradients(loss, params)
-        self.updates = [K.update_add(self.iterations, 1)]
-
+        new_iter_op = tf.assign_add(self.iterations, 1)
+        self.updates = []
+    
         lr = self.lr
-        if self.initial_decay > 0:
-            lr *= (1. / (1. + self.decay * K.cast(self.iterations,
-                                                  K.dtype(self.decay))))
+        with tf.control_dependencies([new_iter_op]):
+            if self.initial_decay > 0:
+                lr *= (1. / (1. + self.decay * K.cast(self.iterations,
+                                                      K.dtype(self.decay))))
 
-        t = (K.cast(self.iterations, K.floatx()) + 1) / self.accum_iters
-        accum_switch = K.equal(self.iterations % self.accum_iters, 0)
-        accum_switch = K.cast(accum_switch, dtype = 'float32')
+            accum_switch = K.cast(K.equal(self.iterations % self.accum_iters, 0), dtype = K.floatx())
+            t = K.cast(self.iterations // self.accum_iters, K.floatx()) + 1   
+        accum_iters = K.cast(self.accum_iters, dtype = K.floatx())
+              
         lr_t = lr * (K.sqrt(1. - K.pow(self.beta_2, t)) / 
                      (1. - K.pow(self.beta_1, t)))
 
@@ -509,7 +514,7 @@ class AdamAccum(keras.optimizers.Optimizer):
         self.weights = [self.iterations] + ms + vs
 
         for p, gp, m, v, ga in zip(params, grads, ms, vs, gs):
-            g = (ga + gp) / self.accum_iters
+            g = (ga + gp) / accum_iters
             m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
             v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g)
             p_t = p - lr_t * m_t / (K.sqrt(v_t) + self.epsilon)
@@ -532,7 +537,7 @@ class AdamAccum(keras.optimizers.Optimizer):
                   'beta_2': float(K.get_value(self.beta_2)),
                   'decay': float(K.get_value(self.decay)),
                   'epsilon': self.epsilon,
-                  'accum_iters': int(K.get_value(self.accum_iters))}
+                  'accum_iters': np.int64(K.get_value(self.accum_iters))}
         base_config = super().get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
