@@ -13,6 +13,7 @@ from keras import backend as K
 from keras.preprocessing.image import load_img, img_to_array, ImageDataGenerator
 from keras.utils.data_utils import GeneratorEnqueuer
 from keras.legacy import interfaces
+from collections import deque, defaultdict
 
 #===============================================================================
 # Functions
@@ -344,13 +345,14 @@ class BSONIterator:
 class TrainTimeStatsCallback(keras.callbacks.Callback):
 
     def __init__(self, filename, statsPerEpoch = 100, \
-                 toSave = ["loss", "acc", "val_loss", "val_acc"]):
+                 toSave = ["loss", "acc", "loss_avg", "acc_avg", "val_loss", "val_acc"]):
         self.filename = filename
         self.statsPerEpoch = statsPerEpoch
         self.toSave = toSave
         self.curEpoch = None
         self.curBatch = None
         self.file = None
+        self.runningMeanDeque = None
         super().__init__()
 
     def on_train_begin(self, logs = None):
@@ -370,14 +372,20 @@ class TrainTimeStatsCallback(keras.callbacks.Callback):
 
     def on_epoch_begin(self, epoch, logs = None):
         self.curEpoch = epoch
-
+        self.runningMeanDeque = defaultdict(lambda: deque(maxlen = self.statsBatchNrDelta))
+        
     def on_epoch_end(self, epoch, logs = None):
         self.SaveStats(logs)
 
     def on_batch_begin(self, batch, logs = None):
+        self.params["steps"]
         self.curBatch = batch
 
     def on_batch_end(self, batch, logs = None):
+        for metricName in self.toSave:
+            if metricName in logs:
+                self.runningMeanDeque["%s_avg" % (metricName)].append(logs[metricName])
+            
         if batch % self.statsBatchNrDelta != 0 or batch + 1 == self.params["steps"]:
             return
         self.SaveStats(logs)
@@ -390,6 +398,10 @@ class TrainTimeStatsCallback(keras.callbacks.Callback):
         for metricName in self.toSave:
             if metricName in logs:
                 row.append(logs[metricName])
+            elif metricName in self.runningMeanDeque:
+                meanValue = np.mean(self.runningMeanDeque[metricName])
+                row.append(meanValue)
+                
             else:
                 row.append("")
         self.file.write("%s\n" % ("\t".join(map(str, row))))
