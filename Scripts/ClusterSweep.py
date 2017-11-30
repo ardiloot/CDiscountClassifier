@@ -61,19 +61,14 @@ if __name__ == "__main__":
         "datasetDir": None,
         "trainDatasetName": "train",
         "interpolationSize": (180, 180),
-        "targetSize": (160, 160),
-        "batchSize": 450,
-        "epochs": 30,
-        "valImagesPerEpoch": 10000,
+        "interpolation": "bicubic",
+        "targetSize": (180, 180),
+        "batchSize": 128,
+        "epochs": 100,
+        "valImagesPerEpoch": 50000,
         "trainImagesPerEpoch": 2000000,
-        "predictMethod": "productActivations",
+        "predictMethod": "meanActivations",
         "testDropout": 0.0,
-        #"trainAugmentation": {
-        #    "zoom_range": 0.1, 
-        #    "width_shift_range": 0.1, 
-        #    "height_shift_range": 0.1, 
-        #    "horizontal_flip": True
-        #    },
         "trainAugmentation": {
             "cropMode": "random",
             },
@@ -86,27 +81,18 @@ if __name__ == "__main__":
             "name": "Xception",
             "kwargs": {
                 "trainable": "blocks10+", 
-                #"weights": "20171119-194946_Xception_model_kwargs_gpus_2/model.02-0.56.hdf5",
-                #"weights": "20171120-003745_Xception_batchSize_900/model.12-0.67.hdf5",
-                "gpus": 1,
+                "gpus": 2,
+                "dropout": None,
                 },
             "trainMode": "continue",  
             },
         "optimizer": {
-            #"name": "Adam",
-            #"kwargs": {"lr": 5e-3}
-            "name": "SGD",
-            "kwargs": {"lr": 5e-3, "momentum": 0.9, "nesterov": False}
+            "name": "AdamAccum",
+            "kwargs": {"lr": 5e-3, "accum_iters": 12}
             },
         "epochSpecificParams":{
-            4: {"lrDecayCoef": 0.1},
-            8: {"lrDecayCoef": 0.1},
-            12: {"lrDecayCoef": 0.1},
-            14: {"lrDecayCoef": 0.5},
-            16: {"lrDecayCoef": 0.5},
-            18: {"lrDecayCoef": 0.5},
-            20: {"lrDecayCoef": 0.5},
-            22: {"lrDecayCoef": 0.5},
+            8: {"lrDecayCoef": 0.2},
+            12: {"lrDecayCoef": 0.25},
             }
         }
     
@@ -115,12 +101,12 @@ if __name__ == "__main__":
        "nodes": 1,
        "cpusPerTask": 5,
        "mem": "20G",
-       "walltime": "3-00:00:00",
+       "walltime": "1-00:00:00",
     }
     
     # Sweep params
-    sweepParam = ("optimizer", "name")
-    sweepValues = ["SGD"]
+    sweepParam = ("model", "kwargs", "dropout")
+    sweepValues = [0.2, 0.5]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)

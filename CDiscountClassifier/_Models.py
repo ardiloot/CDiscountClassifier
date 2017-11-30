@@ -3,7 +3,7 @@ import tensorflow as tf
 from os import path
 from fnmatch import fnmatch
 from keras.models import Model
-from keras.layers import Dense, GlobalAveragePooling2D
+from keras.layers import Dense, GlobalAveragePooling2D, Dropout
 from keras.applications import resnet50, xception
 from keras.utils import multi_gpu_model
 
@@ -65,7 +65,7 @@ def SetTrainableXception(model, trainable):
     else:
         raise ValueError("Unknown trainable mode %s" % (trainable))
 
-def MyXception(imageShape, nClasses, trainable = "onlyTop"):
+def MyXception(imageShape, nClasses, trainable = "onlyTop", dropout = None):
     # Load pretrained model
     modelBase = xception.Xception(include_top = False, input_shape = imageShape, \
         weights = "imagenet")
@@ -73,6 +73,10 @@ def MyXception(imageShape, nClasses, trainable = "onlyTop"):
     # Add top
     x = modelBase.outputs[0]
     x = GlobalAveragePooling2D(name = "avg_pool")(x)
+    if dropout is not None:
+        print("Using dropout", dropout)
+        x = Dropout(dropout, name = "dropout")(x)
+        
     x = Dense(nClasses, activation = "softmax", name = 'predictions')(x)
     model = Model(modelBase.inputs, x, name = "xception")
     
