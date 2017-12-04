@@ -1,9 +1,11 @@
 import os
+import sys
 import numpy as np
 import pandas as pd
 import keras
 import yaml
 import keras.backend as K
+import pickle
 
 from os import path
 from datetime import datetime
@@ -13,6 +15,7 @@ from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
     TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint, \
     CropImageDataGenerator, SGDAccum, AdamAccum
 from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedImport
+
 
 #===============================================================================
 # CDiscountClassfier
@@ -34,6 +37,7 @@ class CDiscountClassfier:
             "batchSize": 64,
             "epochs": 5,
             "workers": 5,
+            "nTtaAugmentation": 1,
             "trainSeed": 1000003,
             "valImagesPerEpoch": None,
             "trainImagesPerEpoch": None,
@@ -247,7 +251,7 @@ class CDiscountClassfier:
         self.model = model
         print("Model fit done.")
                 
-    def Predict(self, bsonIterator, evaluate = False, topK = 0):
+    def Predict(self, bsonIterator, evaluate = False, topK = 0, nAugmentation = 1):
         print("Predict")
         
         predictMethods = {
@@ -264,20 +268,23 @@ class CDiscountClassfier:
         GetActivations = lambda x: K.function([K.learning_phase()] + self.model.inputs, self.model.outputs)([0, x])[0]
        
         res = []
-        resTopK = []
         correctPredictions = dict((k, 0) for k in predictMethods)
         imagesProcessed = 0
         totalPredictions = 0
+        resSaveCount = 0
+        resSaveActivations = np.zeros((bsonIterator.productCount, topK), dtype = np.float32)
+        resSaveCategories = np.zeros((bsonIterator.productCount, topK), dtype = np.int64)
+        resSaveProductIds = np.zeros((bsonIterator.productCount,), dtype = np.int64)
         
-        for productIds, imageBatchIndices, XData in bsonIterator.IterGroupedBatches(workers = self.params["workers"]):
+        for productIds, imageBatchIndices, XData in bsonIterator.IterGroupedBatches(workers = self.params["workers"], nAugmentation = nAugmentation):
             print("Predict %d/%d (%.2f %%) (batch %d)" % (imagesProcessed, \
                 bsonIterator.imagesMetaDf.shape[0],
-                100 * imagesProcessed / bsonIterator.imagesMetaDf.shape[0],
+                100 * imagesProcessed / bsonIterator.imagesMetaDf.shape[0] / nAugmentation,
                 XData.shape[0]))
             
             # Predict
             activations = GetActivations(XData)
-            
+                                    
             # Combine multi-image predictions
             for productId, ids in zip(productIds, imageBatchIndices):
                 if evaluate:
@@ -296,13 +303,15 @@ class CDiscountClassfier:
                         # Add to res
                         res.append([productId, predictedCategory])
                         
-                        # Save top categories to bson
-                        if topK > 0:
-                            bestClasses = productActivations.argsort()[-topK:][::-1]
-                            bestClassProbs = productActivations[bestClasses]
+                        if topK > 0:                
+                            bestClasses = np.argsort(productActivations)[::-1][:topK]
                             bestCategories = np.vectorize(lambda x: self._mapClassToCategory[x])(bestClasses)
-                            resTopK.append([productId] + list(bestCategories) + list(bestClassProbs))
                             
+                            resSaveActivations[resSaveCount, :] = productActivations[bestClasses]
+                            resSaveCategories[resSaveCount, :] = bestCategories
+                            resSaveProductIds[resSaveCount] = productId
+                            resSaveCount += 1
+                       
                 totalPredictions += 1
                 
             # Print evaluation
@@ -312,32 +321,35 @@ class CDiscountClassfier:
             
             # Increase counters
             imagesProcessed += XData.shape[0]
-        print("Predict done.")
+        print("Predict done.", resSaveCount, totalPredictions)
         
         # ResDf
         resDf = pd.DataFrame(res, columns = ["_id", "category_id"])
         resDf.set_index("_id", inplace = True)
-        
-        # resTopKDf
-        if topK > 0:
-            resTopKDf = pd.DataFrame(resTopK, columns = ["_id"] + \
-                ["pred_%d" % (i) for i in range(topK)] + ["prob_%d" % (i) for i in range(topK)])
-            resTopKDf.set_index("_id", inplace = True)
-        else:
-            resTopKDf = None
             
-        return resDf, resTopKDf
+        return resDf, (resSaveProductIds, resSaveCategories, resSaveActivations)
     
     def ValidateModel(self):
-        df, topKDf = self.Predict(self.valGenerator, evaluate = True, topK = 5)
+        df, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
+            self.Predict(self.valGenerator, evaluate = True, topK = 10, \
+            nAugmentation = self.nTtaAugmentation)
         df.to_csv(self.validationFilename + ".gz", compression = "gzip")
-        topKDf.to_csv(self.validationTopKFilename + ".gz", compression = "gzip")
+
+        np.save(self.validationTopKFilename + "_products", resSaveProductIds)
+        np.save(self.validationTopKFilename + "_categories", resSaveCategories)
+        np.save(self.validationTopKFilename + "_activations", resSaveActivations)
         
     def PrepareSubmission(self):
         print("PrepareSubmission...")
-        df, topKDf = self.Predict(self.testGenerator, evaluate = False, topK = 5)
+        df, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
+            self.Predict(self.testGenerator, evaluate = False, topK = 10,
+            nAugmentation = self.nTtaAugmentation)
         df.to_csv(self.submissionFilename + ".gz", compression = "gzip")
-        topKDf.to_csv(self.submissionTopKFilename + ".gz", compression = "gzip")
+        
+        np.save(self.submissionTopKFilename + "_products", resSaveProductIds)
+        np.save(self.submissionTopKFilename + "_categories", resSaveCategories)
+        np.save(self.submissionTopKFilename + "_activations", resSaveActivations)
+        
         print("PrepareSubmission done.")
            
     def _ReadCategoryTree(self):
@@ -431,6 +443,10 @@ class CDiscountClassfier:
         return self.params["batchSize"]
     
     @property
+    def nTtaAugmentation(self):
+        return self.params["nTtaAugmentation"]
+    
+    @property
     def nClasses(self):
         return self._dfCategories.shape[0]
 
@@ -468,11 +484,11 @@ class CDiscountClassfier:
 
     @property
     def submissionTopKFilename(self):
-        return path.join(self.trainingDir, "submissionTopK.csv")
+        return path.join(self.trainingDir, "submissionTopK")
     
     @property
     def validationTopKFilename(self):
-        return path.join(self.trainingDir, "validationTopK.csv")
+        return path.join(self.trainingDir, "validationTopK")
 
 
 if __name__ == "__main__":

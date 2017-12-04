@@ -65,13 +65,23 @@ def PrecalcDatasetMetadata(datasetName, datasetDir):
 def ExtractAndPreprocessImg(productDict, imgNr, interpolationSize, imageDataGenerator, interpolation = "nearest"):
     # Load image
     imgBytes = productDict["imgs"][imgNr]["picture"]
-    img = load_img(io.BytesIO(imgBytes), target_size = interpolationSize, interpolation = interpolation)
-    
+    if np.random.random() < imageDataGenerator.cropProbability:
+        imageSize = interpolationSize
+        img = load_img(io.BytesIO(imgBytes), target_size = imageSize, interpolation = interpolation)
+        x = img_to_array(img)
+        x = imageDataGenerator.Crop(x)
+    else:
+        imageSize = imageDataGenerator.targetSize
+        img = load_img(io.BytesIO(imgBytes), target_size = imageSize, interpolation = interpolation)
+        x = img_to_array(img)
+        
     # Transform and standardize
-    x = img_to_array(img)
     x = imageDataGenerator.random_transform(x)
-    x = imageDataGenerator.Crop(x)
     x = imageDataGenerator.standardize(x)
+    
+    #import pylab as plt
+    #plt.imshow(x.astype(np.uint8))
+    #plt.show()
     
     return x
  
@@ -121,15 +131,17 @@ def SetEpochParams(model, curEpoch, epochSpecificParams):
 
 class CropImageDataGenerator(ImageDataGenerator):
     
-    def __init__(self, *args, targetSize = None, cropMode = "center", **kwargs):
+    def __init__(self, *args, targetSize = None, cropProbability = 0.0, cropMode = "center", **kwargs):
         super().__init__(*args, **kwargs)
         self.targetSize = tuple(targetSize)
         self.cropMode = cropMode
+        self.cropProbability = cropProbability
         
     def Crop(self, x, mode = None):
         if mode is None:
             mode = self.cropMode
         
+        # Crop
         delta = np.array(x.shape)[:2] - np.array(self.targetSize)    
         if mode == "center":
             origin = (delta / 2).astype(int)
@@ -190,9 +202,9 @@ class BSONIterator:
 
         self.file = open(self.bsonFile, "rb")
         self.samples = self.imagesMetaDf.shape[0]
+        self.productCount = self.imagesMetaDf.productId.nunique()
         self.nextIndex = 0
         self.totalBatchesSeen = 0
-        
         self._UpdateIndexArray()
 
     def _UpdateIndexArray(self):
@@ -228,7 +240,7 @@ class BSONIterator:
                 r = self._GetBatchesOfTransformedSamples(indices)
                 yield r
     
-    def IterGroupedBatches(self, workers = 5, maxQueueSize = 10, withLabels = False):
+    def IterGroupedBatches(self, workers = 5, maxQueueSize = 10, nAugmentation = 1, withLabels = False):
         
         class BatchesIterator():
             
@@ -264,13 +276,13 @@ class BSONIterator:
                 batchLen = 0
                 while groupIndex < len(groupedByProducts) and batchLen < self.batchSize:
                     productId, ids = groupedByProducts[groupIndex]
-                    if batchLen + len(ids) > self.batchSize:
+                    if batchLen + nAugmentation * len(ids) > self.batchSize:
                         break
                     
                     productIds.append(productId)
-                    imageMetaIndices.append(ids)
-                    imageBatchIndices.append(range(batchLen, batchLen + len(ids)))
-                    batchLen += len(ids)
+                    imageMetaIndices.append(np.repeat(ids, nAugmentation))
+                    imageBatchIndices.append(range(batchLen, batchLen + nAugmentation * len(ids)))
+                    batchLen += nAugmentation * len(ids)
                     groupIndex += 1
                     
                 batches.append((productIds, np.concatenate(imageMetaIndices), imageBatchIndices))
