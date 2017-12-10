@@ -1,11 +1,9 @@
 import os
-import sys
 import numpy as np
 import pandas as pd
 import keras
 import yaml
 import keras.backend as K
-import pickle
 
 from os import path
 from datetime import datetime
@@ -265,7 +263,7 @@ class CDiscountClassfier:
         if finalPredictMethod not in predictMethods:
             raise ValueError("Unknown predictMethod" , finalPredictMethod)
         
-        GetActivations = lambda x: K.function([K.learning_phase()] + self.model.inputs, self.model.outputs)([0, x])[0]
+        GetActivations = K.function([K.learning_phase()] + self.model.inputs, self.model.outputs)
        
         res = []
         correctPredictions = dict((k, 0) for k in predictMethods)
@@ -278,13 +276,13 @@ class CDiscountClassfier:
         
         for productIds, imageBatchIndices, XData in bsonIterator.IterGroupedBatches(workers = self.params["workers"], nAugmentation = nAugmentation):
             print("Predict %d/%d (%.2f %%) (batch %d)" % (imagesProcessed, \
-                bsonIterator.imagesMetaDf.shape[0],
+                bsonIterator.imagesMetaDf.shape[0] * nAugmentation,
                 100 * imagesProcessed / bsonIterator.imagesMetaDf.shape[0] / nAugmentation,
                 XData.shape[0]))
             
             # Predict
-            activations = GetActivations(XData)
-                                    
+            activations = GetActivations([0, XData])[0]
+            
             # Combine multi-image predictions
             for productId, ids in zip(productIds, imageBatchIndices):
                 if evaluate:
@@ -304,10 +302,11 @@ class CDiscountClassfier:
                         res.append([productId, predictedCategory])
                         
                         if topK > 0:                
-                            bestClasses = np.argsort(productActivations)[::-1][:topK]
+                            bestClasses = productActivations.argsort()[-topK:][::-1]
+                            bestActivations = productActivations[bestClasses]
                             bestCategories = np.vectorize(lambda x: self._mapClassToCategory[x])(bestClasses)
                             
-                            resSaveActivations[resSaveCount, :] = productActivations[bestClasses]
+                            resSaveActivations[resSaveCount, :] = bestActivations
                             resSaveCategories[resSaveCount, :] = bestCategories
                             resSaveProductIds[resSaveCount] = productId
                             resSaveCount += 1
@@ -321,7 +320,8 @@ class CDiscountClassfier:
             
             # Increase counters
             imagesProcessed += XData.shape[0]
-        print("Predict done.", resSaveCount, totalPredictions)
+
+        print("Predict done.")
         
         # ResDf
         resDf = pd.DataFrame(res, columns = ["_id", "category_id"])
@@ -331,7 +331,7 @@ class CDiscountClassfier:
     
     def ValidateModel(self):
         df, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
-            self.Predict(self.valGenerator, evaluate = True, topK = 10, \
+            self.Predict(self.valGenerator, evaluate = True, topK = 100, \
             nAugmentation = self.nTtaAugmentation)
         df.to_csv(self.validationFilename + ".gz", compression = "gzip")
 
@@ -342,7 +342,7 @@ class CDiscountClassfier:
     def PrepareSubmission(self):
         print("PrepareSubmission...")
         df, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
-            self.Predict(self.testGenerator, evaluate = False, topK = 10,
+            self.Predict(self.testGenerator, evaluate = False, topK = 100,
             nAugmentation = self.nTtaAugmentation)
         df.to_csv(self.submissionFilename + ".gz", compression = "gzip")
         
