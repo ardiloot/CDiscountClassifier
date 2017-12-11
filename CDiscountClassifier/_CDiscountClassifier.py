@@ -256,6 +256,9 @@ class CDiscountClassfier:
             "meanActivations": lambda x: np.mean(x, axis = 0),
             "productActivations": lambda x: np.prod(x, axis = 0),
             "rmsActivations": lambda x: np.mean(x ** 2.0, axis = 0),
+            "median": lambda x: np.median(x, axis = 0),
+            "pwr0.1": lambda x: np.mean(x ** 0.1, axis = 0),
+            "max": lambda x: np.max(x, axis = 0),
             "firstImage": lambda x: x[0, :],
             }
         
@@ -265,7 +268,7 @@ class CDiscountClassfier:
         
         GetActivations = K.function([K.learning_phase()] + self.model.inputs, self.model.outputs)
        
-        res = []
+        res = dict((metricName, []) for metricName in predictMethods)
         correctPredictions = dict((k, 0) for k in predictMethods)
         imagesProcessed = 0
         totalPredictions = 0
@@ -297,10 +300,10 @@ class CDiscountClassfier:
                         if predictedCategory == trueCategory:
                             correctPredictions[predictMethodName] += 1
                     
+                    # Add to res
+                    res[predictMethodName].append([productId, predictedCategory])
+                    
                     if predictMethodName == finalPredictMethod:    
-                        # Add to res
-                        res.append([productId, predictedCategory])
-                        
                         if topK > 0:                
                             bestClasses = productActivations.argsort()[-topK:][::-1]
                             bestActivations = productActivations[bestClasses]
@@ -324,16 +327,21 @@ class CDiscountClassfier:
         print("Predict done.")
         
         # ResDf
-        resDf = pd.DataFrame(res, columns = ["_id", "category_id"])
-        resDf.set_index("_id", inplace = True)
-            
+        resDf = {}
+        for metricName, r in res.items():
+            df = pd.DataFrame(res[metricName], columns = ["_id", "category_id"])
+            df.set_index("_id", inplace = True)
+            resDf[metricName] = df
+                
         return resDf, (resSaveProductIds, resSaveCategories, resSaveActivations)
     
     def ValidateModel(self):
-        df, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
+        dfs, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
             self.Predict(self.valGenerator, evaluate = True, topK = 100, \
             nAugmentation = self.nTtaAugmentation)
-        df.to_csv(self.validationFilename + ".gz", compression = "gzip")
+         
+        for metricName, df in dfs.items():   
+            df.to_csv(self.validationFilename + metricName + ".csv.gz", compression = "gzip")
 
         np.save(self.validationTopKFilename + "_products", resSaveProductIds)
         np.save(self.validationTopKFilename + "_categories", resSaveCategories)
@@ -341,10 +349,11 @@ class CDiscountClassfier:
         
     def PrepareSubmission(self):
         print("PrepareSubmission...")
-        df, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
+        dfs, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
             self.Predict(self.testGenerator, evaluate = False, topK = 100,
             nAugmentation = self.nTtaAugmentation)
-        df.to_csv(self.submissionFilename + ".gz", compression = "gzip")
+        for metricName, df in dfs.items():
+            df.to_csv(self.submissionFilename + metricName + ".csv.gz", compression = "gzip")
         
         np.save(self.submissionTopKFilename + "_products", resSaveProductIds)
         np.save(self.submissionTopKFilename + "_categories", resSaveCategories)
@@ -476,11 +485,11 @@ class CDiscountClassfier:
     
     @property
     def submissionFilename(self):
-        return path.join(self.trainingDir, "submission.csv")
+        return path.join(self.trainingDir, "submission_")
     
     @property
     def validationFilename(self):
-        return path.join(self.trainingDir, "validation.csv")
+        return path.join(self.trainingDir, "validation_")
 
     @property
     def submissionTopKFilename(self):
