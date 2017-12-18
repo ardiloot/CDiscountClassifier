@@ -5,6 +5,12 @@ cimport numpy as np
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def RepeatAndLabel(np.ndarray[long long, ndim = 1] arr, np.ndarray[long long, ndim = 1] ns):
+    """RepeatAndLabel(arr, ns)
+    
+    This is a helper function that repeats the every element of `arr` number of
+    times specified by `ns`. Implemented in Cython for performance reasons.
+    
+    """
     cdef int newRows = ns.sum()
     
     res = np.zeros((newRows, 2), dtype = arr.dtype)

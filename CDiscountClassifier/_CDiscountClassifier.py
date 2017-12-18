@@ -1,13 +1,12 @@
 import os
+import yaml
+import keras
 import numpy as np
 import pandas as pd
-import keras
-import yaml
 import keras.backend as K
 
 from os import path
 from datetime import datetime
-
 from CDiscountClassifier import _Models
 from CDiscountClassifier._Utils import PrecalcDatasetMetadata, BSONIterator, \
     TrainTimeStatsCallback, SetEpochParams, MultiGPUModelCheckpoint, \
@@ -20,6 +19,54 @@ from CDiscountClassifier._HelperFunctions import RepeatAndLabel  # @UnresolvedIm
 #===============================================================================
 
 class CDiscountClassfier:
+    """Main class used for the Kaggle competition "Cdiscount’s Image
+    Classification Challenge". This class is really general and configurable
+    through parameters.
+    
+    Parameters
+    ----------
+    friendlyName : string
+        A freiendly name for a model. If not specified, model name will be used.
+    datasetDir : string
+        Path to the directory containing training and testing BSON files. If not
+        specified, environment variable CDISCOUNT_DATASET will be used instead.
+    resultsDir : string
+        Path to the directory for storing results files. Default is "../../results".
+    trainDatasetName : string
+        Name of the training dataset. In this case, train and train_example are
+        possible. Default is train (full dataset)
+    interpolationSize : tuple of ints
+        After loading the image, the image will be interpolated to specified
+        size. Default is (180, 180)
+    targetSize : tuple of ints
+        The final size of the image to be inputed to the neural network. If
+        `interpolationSize` is not equal to `targetSize`, the image will be
+        cropped either randomly or from center. Default is (180, 180).
+    batchSize : int
+        The size of the batch. Default is 64.
+    epochs : int
+        The number of epochs to train the network. Default is 5.
+    workers : int
+        Number of workers for loading image data to feed GPU. Default is 5.
+    nTtaAugmentation : int
+        Number of augmented images to use in case of testing. Default is 1 (no
+        augmentation)
+    trainSeed : int
+        Seed for random number generation. Will be set before training. Default
+        1000003.
+    valImagesPerEpoch : int or None
+        Number of validation images used for artificial epochs. If None, all
+        available validation data is used (default).
+    trainImagesPerEpoch : int or None
+        Number of train images used for artificial epochs. If None, all
+        available training data is used (default).
+    trainAugmentation : dict
+        The parameters for augmentation of training data. 
+        
+        
+     
+    
+    """
     
     def __init__(self, **kwargs):
         # Default params
@@ -27,7 +74,7 @@ class CDiscountClassfier:
             "friendlyName": None,
             "datasetDir": None,
             "resultsDir": "../../results",
-            "trainDatasetName": None,
+            "trainDatasetName": "train",
             "testDatasetName": "test",
             "interpolationSize": (180, 180),
             "interpolation": "nearest",
@@ -44,24 +91,21 @@ class CDiscountClassfier:
             "testAugmentation": {},
             "predictMethod": "meanActivations",
             "testDropout": 0.0,
-            }
-        
-        self.params["valTrainSplit"] = {
-            "splitPercentage": 0.2,
-            "dropoutPercentage": 0.0,
-            "seed": 0
-            }
-        
-        self.params["model"] = {
-            "name": "Xception",
-            "kwargs": {}
-            }
-        
-        self.params["optimizer"] = {
-            "name": "Adam",
-            "kwargs": {}
-            }
-        self.params["epochSpecificParams"] = {}
+            "valTrainSplit": {
+                "splitPercentage": 0.2,
+                "dropoutPercentage": 0.0,
+                "seed": 0
+                },
+            "model": {
+                "name": "Xception",
+                "kwargs": {}
+                },
+            "optimizer": {
+                "name": "Adam",
+                "kwargs": {}
+                },
+            "epochSpecificParams": {}
+        }
                   
         # Update params
         self.params.update(**kwargs)
