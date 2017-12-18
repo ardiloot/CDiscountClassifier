@@ -1,11 +1,83 @@
+"""This script is used to train, validate and test the classifier. This script
+optionally takes one command line parameter: parameterFile. It could be used to
+run the script with presave parameters save into YAML file.
+
+"""
+
 import os
 import sys
 import yaml
-import cProfile, pstats
+
 from os import path
 from CDiscountClassifier import CDiscountClassfier
 
+#===============================================================================
+# Constants
+#===============================================================================
+
+DEFAULT_PARAMS = {
+    "datasetDir": None,
+    "trainDatasetName": "train",
+    "interpolationSize": (210, 210),
+    "interpolation": "bicubic",
+    "targetSize": (180, 180),
+    "batchSize": 64,
+    "epochs": 1,
+    "trainImagesPerEpoch": 200,
+    "valImagesPerEpoch": 100,
+    "predictMethod": "productActivations",
+    "testDropout": 0.9999,
+    "workers": 5,
+    "nTtaAugmentation": 5,
+    "valTrainSplit": {
+        "splitPercentage": 0.3,
+        "dropoutPercentage": 0.9999,
+        "seed": 0
+        },
+    "trainAugmentation": {
+        "cropMode": "random",
+        "cropProbability": 0.5,
+        "horizontal_flip": True,
+        },
+    "model": {
+        "name": "Xception",
+        "kwargs": {
+            "trainable": "onlyTop",
+            "gpus": 1,
+            "dropout": 0.5,
+            },
+        "trainMode": "continue",  
+        },
+    "optimizer": {
+        "name": "AdamAccum",
+        "kwargs": {
+            "lr": 0.005,
+            "accum_iters": 4,
+            },
+        },
+    "epochSpecificParams":{
+        4: {"lrDecayCoef": 0.1},
+        6: {"lrDecayCoef": 0.1},
+        }
+    }
+
+#===============================================================================
+# Helper classes
+#===============================================================================
+
 class Tee(object):
+    """Helper class to duplicate standard error and output to log file. Idea
+    and code from https://stackoverflow.com/questions/616645/how-do-i-duplicate-sys-stdout-to-a-log-file-in-python
+
+    Parameters
+    ----------
+    name : string
+        The filename for the file to duplicate.
+    mode : string
+        File open mode.
+
+    """
+    
     def __init__(self, name, mode):
         if not path.isdir(path.dirname(name)):
             os.mkdir(path.dirname(name))
@@ -31,87 +103,30 @@ class Tee(object):
         self.stderr.flush()
 
 if __name__ == "__main__":
-    print("Start TrainModel")
-    sys.stdout.flush()
-    
-    params = {
-        "datasetDir": None,
-        "trainDatasetName": "train",
-        "resultsDir": r"C:\Users\Ardi\Downloads\results",
-        "interpolationSize": (180, 180),
-        "targetSize": (160, 160),
-        "batchSize": 32,
-        "epochs": 5,
-        "trainImagesPerEpoch": 640,
-        "valImagesPerEpoch": 50,
-        "predictMethod": "productActivations",
-        "testDropout": 0.9999,
-        "valTrainSplit": {
-            "splitPercentage": 0.1,
-            "dropoutPercentage": 0.9999,
-            "seed": 0
-            },
-        "trainAugmentation": {
-            #"zoom_range": 0.1,
-            #"width_shift_range": 0.1,
-            #"height_shift_range": 0.1,
-            #"horizontal_flip": True,
-            "cropMode": "random",
-            },
-        "model": {
-            "name": "Xception",
-            "kwargs": {
-                "trainable": "onlyTop",
-                #"weights": "20171118-162839_Xception_trainAugmentation_nr_0/model.11-0.64.hdf5"
-                #"weights": "20171120-003745_Xception_batchSize_900/model.12-0.67.hdf5",
-                },
-            "trainMode": "continue",  
-            },
-        "optimizer": {
-            "name": "SGD",
-            "kwargs": {
-                "lr": 0.005,
-                "momentum": 0.9,
-                },
-            },
-        "epochSpecificParams":{
-            2: {"lrDecayCoef": 0.1, "trainable": "blocks10+"},
-            4: {"lrDecayCoef": 0.1},
-            6: {"lrDecayCoef": 0.1},
-            }
-        }
-
+    # Load params
+    params = DEFAULT_PARAMS
     if len(sys.argv) > 1:
         ymlParamsFile = sys.argv[1]
-        print("ymlParamsFile", ymlParamsFile)
         with open(ymlParamsFile, "r") as fin:
             params = yaml.safe_load(fin)
     
+    # Init classifier
     print("Init classifier...")
     m = CDiscountClassfier(**params)
     m.InitTrainingData()
     m.GenerateTrainingName()
+    
+    # Duplicate stdout and stderr to a file
     print("Init tee...")
     tee = Tee(m.logFilename, "w")
     
+    # Train model
     m.TrainModel(updateTrainingName = False)
     
-    profile = cProfile.Profile()    
-    profile.enable()
+    # Validate model
     m.ValidateModel()
-    profile.disable()
-    pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
     
+    # Load test data and make predictions 
     m.InitTestData()
-    profile = cProfile.Profile()    
-    profile.enable()
     m.PrepareSubmission()
-    profile.disable()
-    pstats.Stats(profile).sort_stats("cumtime").print_stats(50)
-    
-    print("TrainModel done.")
-    del tee
-    print("TrainModel done.")
-    
-    sys.exit()
     

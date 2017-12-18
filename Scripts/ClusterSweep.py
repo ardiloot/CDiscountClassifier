@@ -1,10 +1,21 @@
+"""This script was used to submit jobs into the computer cluster of university
+of Tartu. This script could be easily modified to any cluster having a queue
+system.
+
+"""
+
 import os
 import yaml
-import numpy as np
 import subprocess
+import numpy as np
+
 from datetime import datetime
 from copy import deepcopy
 from os import path
+
+#===============================================================================
+# Constants
+#===============================================================================
 
 HPC_SCRIPT_TEMPLATE = \
 r"""#!/bin/bash
@@ -60,17 +71,30 @@ if __name__ == "__main__":
     params = {
         "datasetDir": None,
         "trainDatasetName": "train",
-        "interpolationSize": (180, 180),
+        "interpolationSize": (200, 200),
         "interpolation": "bicubic",
         "targetSize": (180, 180),
-        "batchSize": 128,
-        "epochs": 100,
+        "batchSize": 64,
+        "epochs": 1,
         "valImagesPerEpoch": 50000,
         "trainImagesPerEpoch": 2000000,
         "predictMethod": "meanActivations",
         "testDropout": 0.0,
+        "nTtaAugmentation": 1,
         "trainAugmentation": {
             "cropMode": "random",
+            "cropProbability": 0.75,
+            "horizontal_flip": True,
+            },
+        "valAugmentation": {
+            "cropMode": "random",
+            "cropProbability": 0.75,
+            "horizontal_flip": True,
+            },
+        "testAugmentation": {
+            "cropMode": "random",
+            "cropProbability": 0.75,
+            "horizontal_flip": True,
             },
         "valTrainSplit": {
             "splitPercentage": 0.1,
@@ -80,9 +104,11 @@ if __name__ == "__main__":
         "model": {
             "name": "Xception",
             "kwargs": {
-                "trainable": "blocks10+", 
-                "gpus": 2,
-                "dropout": None,
+#                "trainable": "blocks10+",
+                "trainable": "full",
+                "weights": "20171206-153055_Xception_model_kwargs_dropout_0.2/model.55-0.69.hdf5", 
+                "gpus": 1,
+                "dropout": 0.0,
                 },
             "trainMode": "continue",  
             },
@@ -92,7 +118,10 @@ if __name__ == "__main__":
             },
         "epochSpecificParams":{
             8: {"lrDecayCoef": 0.2},
-            12: {"lrDecayCoef": 0.25},
+            16: {"trainable": "full"},
+            25: {"lrDecayCoef": 0.25},
+            30: {"lrDecayCoef": 0.25},
+            35: {"lrDecayCoef": 0.25},
             }
         }
     
@@ -101,12 +130,12 @@ if __name__ == "__main__":
        "nodes": 1,
        "cpusPerTask": 5,
        "mem": "20G",
-       "walltime": "1-00:00:00",
+       "walltime": "1-0:00:00",
     }
     
     # Sweep params
-    sweepParam = ("model", "kwargs", "dropout")
-    sweepValues = [0.2, 0.5]
+    sweepParam = ("nTtaAugmentation", )
+    sweepValues = [10]
     
     for i, sweepValue in enumerate(sweepValues):
         print(i, sweepParam, sweepValue)
