@@ -257,7 +257,9 @@ class CDiscountClassfier:
             "productActivations": lambda x: np.prod(x, axis = 0),
             "rmsActivations": lambda x: np.mean(x ** 2.0, axis = 0),
             "median": lambda x: np.median(x, axis = 0),
+            "pwr0.2": lambda x: np.mean(x ** 0.2, axis = 0),
             "pwr0.1": lambda x: np.mean(x ** 0.1, axis = 0),
+            "pwr0.05": lambda x: np.mean(x ** 0.05, axis = 0),
             "max": lambda x: np.max(x, axis = 0),
             "firstImage": lambda x: x[0, :],
             }
