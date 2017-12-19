@@ -38,6 +38,8 @@ class CDiscountClassfier:
     interpolationSize : tuple of ints
         After loading the image, the image will be interpolated to specified
         size. Default is (180, 180)
+    interpolation : string
+        Name of the interpolation method. Default is bicubic.
     targetSize : tuple of ints
         The final size of the image to be inputed to the neural network. If
         `interpolationSize` is not equal to `targetSize`, the image will be
@@ -61,11 +63,78 @@ class CDiscountClassfier:
         Number of train images used for artificial epochs. If None, all
         available training data is used (default).
     trainAugmentation : dict
-        The parameters for augmentation of training data. 
+        The parameters for augmentation of training data. Accepts all parameters
+        as `ImageDataGenerator` and additional params defined by
+        `CropImageDataGenerator`.
+    trainAugmentation : dict
+        The parameters for augmentation of training data. Accepts all parameters
+        as `ImageDataGenerator` and additional params defined by
+        `CropImageDataGenerator`.    
+    valAugmentation : dict
+        The parameters for augmentation of validation data. Accepts all parameters
+        as `ImageDataGenerator` and additional params defined by
+        `CropImageDataGenerator`.
+    testAugmentation : dict
+        The parameters for augmentation of test data. Accepts all parameters
+        as `ImageDataGenerator` and additional params defined by
+        `CropImageDataGenerator`.    
+    predictMethod : string
+        Name of the main predict method used for combining the predictions of
+        multiple images. Possible selections are "meanActivations", "median",
+        "pwr0.2", "pwr0.1", "pwr0.05", "max", "firstImage".
+    testDropout : float
+        Fraction of test data to drop. Used for fast testing. Default is 0.0.
+    valTrainSplit : dict
+        Parameters used for making train and validation split. For parameter
+        definitions see the description of the method `_MakeTrainValSets`.
+    model : dict
+        Parameter dictionary for model. For possible parameters see _Models module.
+    optimizer : dict
+        Contains to "name" (SGD, Adam, AdamAccum) of the optimizer and parameters
+        for it ("kwargs").
+    epochSpecificParams : dict
+        Dictionary for epoch specific parameters. Makes possible to tune learning
+        rate and model trainability turing the optimization.
         
+    Attributes
+    ----------
+    params : dict
+        Dictionary containing all classifier parameters.
+    datasetDir : string
+        Path to dataset directry.
+    trainDatasetName : string
+        Name of the training dataset to use.
+    targetSize : tuple of ints
+        Size of the images used by neural networks.
+    interpolationSize : tuple of ints
+        Size for rezizing the images.
+    batchSize : int
+        The size of the batch.
+    nTtaAugmentation : int
+        Number of test time augmentation.
+    nClasses : int
+        Number of different classification classes.
+    imageShape : tuple of ints
+        Raw image data shape.
+    resultsDir : string
+        Path to results directory.
+    trainingDir : string
+        Path to the results folder of the current model run.
+    modelFilename : string
+        Path for the `ModelCheckpoint` callback.
+    statsFilename : string
+        Path to the additional accuracy log CSV file.
+    logFilename : string
+        Path to the log file.
+    submissionFilename : string
+        Path to the submission CSV file.
+    validationFilename : string
+        Path to the validation CSV file.
+    submissionTopKFilename : string
+        Path to the top-K activations file of submission.
+    validationTopKFilename : string
+        Path to the top-K activations file of validation.
         
-     
-    
     """
     
     def __init__(self, **kwargs):
@@ -121,13 +190,31 @@ class CDiscountClassfier:
         # Precalc
         self._ReadCategoryTree()
         
-    def GenerateTrainingName(self):  
+    def GenerateTrainingName(self):
+        """This method generates a unique training name. If friendlyName is
+        specified, then it will be concatenaded with current time. If
+        freindlyName is None, then model name will be used instead. Usually
+        called internally by method `TrainModel`, but in some cases, is usful
+        to generate training name beforehand.
+        
+        Returns
+        -------
+        string
+            Unique training name.
+        
+        """
+        
         dateStr = datetime.now().strftime("%Y%m%d-%H%M%S")
         friendlyName = self.params["model"]["name"] if self.params["friendlyName"] is None else self.params["friendlyName"] 
         self.trainingName = "%s_%s" % (dateStr, friendlyName)
         return self.trainingName 
                 
     def InitTrainingData(self):
+        """Calling this method prepares training data for use. Must be called
+        before calling method `TrainModel`. 
+        
+        """
+        
         # Products metadata
         self.trainProductsMetaDf = self._ReadProductsMetadata(self.trainDatasetName)
         
@@ -162,6 +249,11 @@ class CDiscountClassfier:
         print("Init iterators done.")
    
     def InitTestData(self):
+        """Calling this method prepares test data for use. Must be called
+        before calling method `PrepareSubmission`. 
+        
+        """
+        
         print("Init test data ...")
         # Products metadata
         self.testProductsMetaDf = self._ReadProductsMetadata(self.testDatasetName)
@@ -182,6 +274,20 @@ class CDiscountClassfier:
         print("Init test data done.")
                 
     def TrainModel(self, updateTrainingName = True, newTrainingName = None):
+        """Trains the model specifed by parameters.
+        
+        Parameters
+        ----------
+        updateTrainingName : bool
+            If True (default), a new training name (and training results folder)
+            will be generated. If False, old trainingName will be used.
+        newTrainingName : string
+            Has only effect if `updateTrainingName` is True. If is none, a
+            `GenerateTrainingName` method will be used for a new name. If not
+            None, the value specifed by `newTrainingName` will be used as a new
+            name.
+        
+        """
         # Training name
         if updateTrainingName:
             self.trainingName = self.GenerateTrainingName() if newTrainingName is None else newTrainingName 
@@ -294,6 +400,30 @@ class CDiscountClassfier:
         print("Model fit done.")
                 
     def Predict(self, bsonIterator, evaluate = False, topK = 0, nAugmentation = 1):
+        """Main method for evaluation and predictions by a trained model. This
+        method is also used by `ValidateModel` and `PrepareSubmission`.
+        
+        Parameters
+        ----------
+        bsonIterator : `BSONIterator`
+            A incatance of `BSONIterator` with a data to be used for predictions.
+        evaluate : bool
+            If True, the predictions will be also evaluated.
+        topK : int
+            Number of top categories to save.
+        nAugmentation : int
+            Number of augmented images to use for test time augmentation.
+            
+        Returns
+        -------
+        resDf : `DataFrame`
+            DataFrame containing productIds and predicted categories.
+        (resSaveProductIds, resSaveCategories, resSaveActivations) : tuple of ndarray
+            ProductIds, categories and activations for topK classes for each
+            product.
+        
+        """
+        
         print("Predict")
         
         predictMethods = {
@@ -375,13 +505,18 @@ class CDiscountClassfier:
         # ResDf
         resDf = {}
         for metricName, r in res.items():
-            df = pd.DataFrame(res[metricName], columns = ["_id", "category_id"])
+            df = pd.DataFrame(r, columns = ["_id", "category_id"])
             df.set_index("_id", inplace = True)
             resDf[metricName] = df
                 
         return resDf, (resSaveProductIds, resSaveCategories, resSaveActivations)
     
     def ValidateModel(self):
+        """Validates model against full set of validation data and saves results
+        to `trainingDir`.
+        
+        """
+        
         dfs, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
             self.Predict(self.valGenerator, evaluate = True, topK = 100, \
             nAugmentation = self.nTtaAugmentation)
@@ -394,6 +529,11 @@ class CDiscountClassfier:
         np.save(self.validationTopKFilename + "_activations", resSaveActivations)
         
     def PrepareSubmission(self):
+        """Makes predictions for every test product and saves the results to
+        `trainingDir`.
+        
+        """
+        
         print("PrepareSubmission...")
         dfs, (resSaveProductIds, resSaveCategories, resSaveActivations) = \
             self.Predict(self.testGenerator, evaluate = False, topK = 100,
@@ -406,6 +546,9 @@ class CDiscountClassfier:
         np.save(self.submissionTopKFilename + "_activations", resSaveActivations)
         
         print("PrepareSubmission done.")
+           
+    # Heper functions
+    # --------------------------------------------------------------------------
            
     def _ReadCategoryTree(self):
         # Read
@@ -437,6 +580,21 @@ class CDiscountClassfier:
         return productsMetaDf
         
     def _MakeTrainValSets(self, productsMetaDf, splitPercentage = 0.1, dropoutPercentage = 0.0, seed = 0):
+        """Splits dataset to train and validation set.
+        
+        Parameters
+        ----------
+        productsMetaDf : `DataFrame`
+            Products metadata DataFrame.
+        splitPercentage : float
+            Validation split fraction.
+        dropoutPercentage : float
+            Dropout fraction.
+        seed : int
+            Specified seed for random number generator.
+        
+        
+        """
         np.random.seed(seed)
         indicesByGroups = productsMetaDf.groupby("categoryId", sort = False).indices
         numImgsColumnNr = productsMetaDf.columns.get_loc("numImgs")

@@ -1,3 +1,7 @@
+"""This module contains utilities for `CDiscountClassifier` class.
+
+"""
+
 import io
 import bson
 import struct

@@ -1,3 +1,6 @@
+"""This module implements/imports models usable by `CDiscountClassifier`.
+
+"""
 import tensorflow as tf
 
 from os import path
@@ -16,8 +19,38 @@ def _SetLayerTrainable(model, pattern, trainable):
             if fnmatch(layer.name, pattern):
                 layer.trainable = trainable
 
+#===============================================================================
+# Functions
+#===============================================================================
+
 def GetModel(imageShape, nClasses, name = None, weights = None, \
         weightsDir = None, gpus = 1, **kwargs):
+    """Universal function called by `CDiscountClassifer` to get a instance of a
+    model. This function takes care of loading precalculated weights and
+    distribution onto multiple GPUs.
+    
+    Parameters
+    ----------
+    imageShape : tuple of ints
+        Shape of the image.
+    nClasses : int
+        Number of classes.
+    name : string
+        Name of the model. Currently only "Xception" is supported.
+    weights : string
+        If not None, weights from this file will be loaded into the model.
+    weightsDir : string:
+        Spesifies the directory of the weights.
+    gpus : int
+        Number of GPUs to distribute.
+    **kwargs : dict
+        Additional parameters passed to model.
+
+    Returns
+    -------
+    model instance
+    
+    """
     
     modelClass = MODELS[name]
 
