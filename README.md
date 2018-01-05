@@ -23,6 +23,10 @@ This code was used to train Xception model for Kaggle competition [Cdiscount’s
 * cython
 * h5py
 
+## Description of methods
+
+The report descibing the methods is available [here](https://www.dropbox.com/s/szxtlzr4af5ggyf/cdiscount_report.pdf?dl=0).
+
 ## Results
 
 The final results of the competition are available [here](https://www.kaggle.com/c/cdiscount-image-classification-challenge/leaderboard). The Xception model (team name "Ardi Loot") trained with this code got 64th position (bronze) out of 627 (accuracy 0.72582).
